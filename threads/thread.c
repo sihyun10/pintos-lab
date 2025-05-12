@@ -62,7 +62,10 @@ static void init_thread(struct thread*, const char* name, int priority);
 static void do_schedule(int status);
 static void schedule(void);
 static tid_t allocate_tid(void);
+bool help_thread_sort(const struct list_elem* a, const struct list_elem* b,
+  void* aux UNUSED);
 
+/*
 void debug_ready_list(void) {
   printf("\n===== Ready List Status =====\n");
   struct list_elem* e = list_begin(&ready_list);
@@ -73,6 +76,7 @@ void debug_ready_list(void) {
   }
   printf("===== End of Ready List =====\n\n");
 }
+*/
 
 /* Returns true if T appears to point to a valid thread. */
 #define is_thread(t) ((t) != NULL && (t)->magic == THREAD_MAGIC)
@@ -171,7 +175,7 @@ void thread_print_stats(void) {
 }
 
 /* ready_list 우선순위 정렬을 위한 서브 함수 */
-bool value_less(const struct list_elem* a, const struct list_elem* b,
+bool help_thread_sort(const struct list_elem* a, const struct list_elem* b,
   void* aux UNUSED) {
   struct thread* data_a = list_entry(a, struct thread, elem);
   struct thread* data_b = list_entry(b, struct thread, elem);
@@ -258,24 +262,15 @@ thread_unblock(struct thread* t) {
   old_level = intr_disable();
   ASSERT(t->status == THREAD_BLOCKED);
   // list_push_back(&ready_list, &t->elem);
-  list_insert_ordered(&ready_list, &t->elem, value_less, NULL);
+  list_insert_ordered(&ready_list, &t->elem, help_thread_sort, NULL);
   t->status = THREAD_READY;
 
-  // 디버깅
-  // debug_ready_list();
+  // idle_thread 여부를 확인하고 우선순위 비교 후, 선점
+  if (thread_current() != idle_thread && t->priority > thread_current()->priority) {
+    thread_yield();
+  }
 
   intr_set_level(old_level);
-
-  /*
-  printf("\n===== thread_unblock =====\n");
-  struct list_elem* lst_elem = list_begin(&ready_list);
-
-  while (lst_elem != list_end(&ready_list)) {
-    struct thread* cur = list_entry(lst_elem, struct thread, elem);
-    printf("ready list : %p\n", cur);
-    lst_elem = list_next(lst_elem);
-  }
-  */
 }
 
 /* Returns the name of the running thread. */
@@ -334,10 +329,7 @@ thread_yield(void) {
   old_level = intr_disable();
   if (curr != idle_thread)
     // list_push_back(&ready_list, &curr->elem);
-    list_insert_ordered(&ready_list, &curr->elem, value_less, NULL);
-
-  // 디버깅
-  // debug_ready_list();
+    list_insert_ordered(&ready_list, &curr->elem, help_thread_sort, NULL);
 
   do_schedule(THREAD_READY);
   intr_set_level(old_level);
@@ -349,8 +341,16 @@ thread_set_priority(int new_priority) {
   enum intr_level old_level;
   old_level = intr_disable();
 
-  // 우선순위가 바뀌면 다시 정렬하기 위해 ready 상태로 보냄
+  // 우선순위가 낮아졌다면 우선순위가 높은 쓰레드에게 넘김
   thread_current()->priority = new_priority;
+  /*
+  if (!list_empty(&ready_list)) {
+    struct thread* highest = list_entry(list_front(&ready_list), struct thread, elem);
+    if (highest->priority > thread_current()->priority) {
+      thread_yield();
+    }
+  }
+  */
   thread_yield();
 
   intr_set_level(old_level);
@@ -420,6 +420,15 @@ idle(void* idle_started_ UNUSED) {
 
        See [IA32-v2a] "HLT", [IA32-v2b] "STI", and [IA32-v3a]
        7.11.1 "HLT Instruction". */
+       /* 인터럽트를 다시 활성화하고 다음 인터럽트를 기다립니다.
+
+  `sti' 명령어는 다음 명령어가 완료될 때까지 인터럽트를 비활성화하므로
+  이 두 명령어는 원자적으로 실행됩니다. 이 원자성은 중요합니다.
+  그렇지 않으면 인터럽트를 다시 활성화하고 다음 인터럽트가 발생할 때까지 기다리는 사이에 인터럽트를 처리하여
+  최대 한 클럭 틱만큼의 시간을 낭비하게 될 수 있습니다.
+
+  [IA32-v2a] "HLT", [IA32-v2b] "STI" 및 [IA32-v3a]
+7.11.1 "HLT 명령어"를 참조하십시오. */
     asm volatile ("sti; hlt" : : : "memory");
   }
 }
@@ -463,7 +472,7 @@ static struct thread* next_thread_to_run(void) {
     return idle_thread;
 
   else {
-    // struct list_elem* max_elem = list_max(&ready_list, value_less, NULL);
+    // struct list_elem* max_elem = list_max(&ready_list, help_thread_sort, NULL);
     // list_remove(max_elem);
     // return list_entry(max_elem, struct thread, elem);
     return list_entry(list_pop_front(&ready_list), struct thread, elem);
@@ -617,7 +626,7 @@ static void schedule(void) {
     if (curr && curr->status == THREAD_DYING && curr != initial_thread) {
       ASSERT(curr != next);
       // list_push_back(&destruction_req, &curr->elem);
-      list_insert_ordered(&destruction_req, &curr->elem, value_less, NULL);
+      list_insert_ordered(&destruction_req, &curr->elem, help_thread_sort, NULL);
     }
 
     /* Before switching the thread, we first save the information
