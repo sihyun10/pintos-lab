@@ -29,11 +29,17 @@ static bool too_many_loops (unsigned loops);
 static void busy_wait (int64_t loops);
 static void real_time_sleep (int64_t num, int32_t denom);
 
+static struct list sleep_list;
+
 /* Sets up the 8254 Programmable Interval Timer (PIT) to
    interrupt PIT_FREQ times per second, and registers the
    corresponding interrupt. */
+// 100(TIMER_FREQ)Hz 주기로 인터럽트를 발생시킨다.
+// 대략 10ms로 인터럽트를 발생시켜 시간 경과를 확인한다.
 void
 timer_init (void) {
+
+	list_init(&sleep_list);
 	/* 8254 input frequency divided by TIMER_FREQ, rounded to
 	   nearest. */
 	uint16_t count = (1193180 + TIMER_FREQ / 2) / TIMER_FREQ;
@@ -41,11 +47,13 @@ timer_init (void) {
 	outb (0x43, 0x34);    /* CW: counter 0, LSB then MSB, mode 2, binary. */
 	outb (0x40, count & 0xff);
 	outb (0x40, count >> 8);
-
+	// timer_interrupt: 타이머 인터럽트가 발생했을 때 실행될 핸들러.
+	// intr_register_ext는 핸들러가 실행될 때 인터럽트는 꺼진 상태로 실행됨이 보장된다.
 	intr_register_ext (0x20, timer_interrupt, "8254 Timer");
 }
 
 /* Calibrates loops_per_tick, used to implement brief delays. */
+// cpu가 1틱동안 몇 루프를 돌 수 있는지 확인
 void
 timer_calibrate (void) {
 	unsigned high_bit, test_bit;
@@ -71,6 +79,7 @@ timer_calibrate (void) {
 }
 
 /* Returns the number of timer ticks since the OS booted. */
+// 운영체제가 부팅하고 난 후 얼마만큼의 시간이 지났는가?
 int64_t
 timer_ticks (void) {
 	enum intr_level old_level = intr_disable ();
@@ -82,19 +91,36 @@ timer_ticks (void) {
 
 /* Returns the number of timer ticks elapsed since THEN, which
    should be a value once returned by timer_ticks(). */
+// then부터 지금까지 얼마나 시간이 흘렀는지를 tick단위로 리턴.
 int64_t
 timer_elapsed (int64_t then) {
 	return timer_ticks () - then;
 }
 
 /* Suspends execution for approximately TICKS timer ticks. */
+// 현재 스레드를 잠시 멈추고 일정 시간 동안 대기.
 void
 timer_sleep (int64_t ticks) {
 	int64_t start = timer_ticks ();
+	enum intr_level old_level;
+
 
 	ASSERT (intr_get_level () == INTR_ON);
-	while (timer_elapsed (start) < ticks)
-		thread_yield ();
+	// // 시간경과가 대기할 시간보다 적을때까지 반복
+	// while (timer_elapsed (start) < ticks)
+	// 	// 다른 스레드로 cpu를 양보
+	// 	thread_yield ();
+	old_level = intr_disable ();
+	struct thread *t = thread_current ();
+	// 상태 업데이트
+	t->start = start;
+	t->ticks = ticks;
+	// sleep list에 현재 쓰레드를 저장
+	list_push_back(&sleep_list, &t->elem);
+	// 현재 쓰레드를 block
+	thread_block();
+	intr_set_level (old_level);
+
 }
 
 /* Suspends execution for approximately MS milliseconds. */
@@ -124,12 +150,34 @@ timer_print_stats (void) {
 /* Timer interrupt handler. */
 static void
 timer_interrupt (struct intr_frame *args UNUSED) {
+	// 경과시간 +1
 	ticks++;
+
+	// sleep_list 관리
+	struct list_elem *e = list_begin(&sleep_list);
+	while(e != list_end(&sleep_list)){
+		struct list_elem *next = list_next(e);
+
+		struct thread *t = list_entry(e, struct thread, elem);
+		
+		if(timer_elapsed(t->start) > t->ticks){
+			// list에서 삭제하고 unblock하는 순서가 중요하다.
+			// 타이머 인터럽트는 계속 sleep list를 순회하는 동안에도 들어오기 때문에
+			// 리스트에서 먼저 제거하지 않고 unblock을 한다면
+			// 그 사이에 또 다시 리스트를 순회하게 되고 unblock된 쓰레드를 또 언블록할 수 있다.
+			list_remove(e);
+			thread_unblock(t);
+		}
+		e = next;
+	}
+
+	// 현재 쓰레드의 상태를 업데이트하고, 필요하면 쓰레드 전환
 	thread_tick ();
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
    tick, otherwise false. */
+// 주어진 loops 횟수만큼 반복하면 1틱(10ms)보다 오래 걸리는가?
 static bool
 too_many_loops (unsigned loops) {
 	/* Wait for a timer tick. */
