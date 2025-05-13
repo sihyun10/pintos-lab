@@ -62,21 +62,6 @@ static void init_thread(struct thread*, const char* name, int priority);
 static void do_schedule(int status);
 static void schedule(void);
 static tid_t allocate_tid(void);
-bool help_thread_sort(const struct list_elem* a, const struct list_elem* b,
-  void* aux UNUSED);
-
-/*
-void debug_ready_list(void) {
-  printf("\n===== Ready List Status =====\n");
-  struct list_elem* e = list_begin(&ready_list);
-  while (e != list_end(&ready_list)) {
-    struct thread* t = list_entry(e, struct thread, elem);
-    printf("Thread: %s | Priority: %d\n", t->name, t->priority);
-    e = list_next(e);
-  }
-  printf("===== End of Ready List =====\n\n");
-}
-*/
 
 /* Returns true if T appears to point to a valid thread. */
 #define is_thread(t) ((t) != NULL && (t)->magic == THREAD_MAGIC)
@@ -175,11 +160,20 @@ void thread_print_stats(void) {
 }
 
 /* ready_list 우선순위 정렬을 위한 서브 함수 */
-bool help_thread_sort(const struct list_elem* a, const struct list_elem* b,
+bool thread_compare_priority(const struct list_elem* a, const struct list_elem* b,
   void* aux UNUSED) {
   struct thread* data_a = list_entry(a, struct thread, elem);
   struct thread* data_b = list_entry(b, struct thread, elem);
   return data_a->priority > data_b->priority;
+}
+
+void
+thread_test_preemption(void)
+{
+  if (!list_empty(&ready_list) &&
+    thread_current()->priority <
+    list_entry(list_front(&ready_list), struct thread, elem)->priority)
+    thread_yield();
 }
 
 /* Creates a new kernel thread named NAME with the given initial
@@ -227,6 +221,7 @@ thread_create(const char* name, int priority,
 
   /* Add to run queue. */
   thread_unblock(t);
+  thread_test_preemption();
 
   return tid;
 }
@@ -262,13 +257,8 @@ thread_unblock(struct thread* t) {
   old_level = intr_disable();
   ASSERT(t->status == THREAD_BLOCKED);
   // list_push_back(&ready_list, &t->elem);
-  list_insert_ordered(&ready_list, &t->elem, help_thread_sort, NULL);
+  list_insert_ordered(&ready_list, &t->elem, thread_compare_priority, NULL);
   t->status = THREAD_READY;
-
-  // idle_thread 여부를 확인하고 우선순위 비교 후, 선점
-  if (thread_current() != idle_thread && t->priority > thread_current()->priority) {
-    thread_yield();
-  }
 
   intr_set_level(old_level);
 }
@@ -329,7 +319,7 @@ thread_yield(void) {
   old_level = intr_disable();
   if (curr != idle_thread)
     // list_push_back(&ready_list, &curr->elem);
-    list_insert_ordered(&ready_list, &curr->elem, help_thread_sort, NULL);
+    list_insert_ordered(&ready_list, &curr->elem, thread_compare_priority, NULL);
 
   do_schedule(THREAD_READY);
   intr_set_level(old_level);
@@ -338,22 +328,9 @@ thread_yield(void) {
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void
 thread_set_priority(int new_priority) {
-  enum intr_level old_level;
-  old_level = intr_disable();
-
   // 우선순위가 낮아졌다면 우선순위가 높은 쓰레드에게 넘김
   thread_current()->priority = new_priority;
-  /*
-  if (!list_empty(&ready_list)) {
-    struct thread* highest = list_entry(list_front(&ready_list), struct thread, elem);
-    if (highest->priority > thread_current()->priority) {
-      thread_yield();
-    }
-  }
-  */
-  thread_yield();
-
-  intr_set_level(old_level);
+  thread_test_preemption();
 }
 
 /* Returns the current thread's priority. */
@@ -472,9 +449,6 @@ static struct thread* next_thread_to_run(void) {
     return idle_thread;
 
   else {
-    // struct list_elem* max_elem = list_max(&ready_list, help_thread_sort, NULL);
-    // list_remove(max_elem);
-    // return list_entry(max_elem, struct thread, elem);
     return list_entry(list_pop_front(&ready_list), struct thread, elem);
   }
 }
@@ -626,7 +600,7 @@ static void schedule(void) {
     if (curr && curr->status == THREAD_DYING && curr != initial_thread) {
       ASSERT(curr != next);
       // list_push_back(&destruction_req, &curr->elem);
-      list_insert_ordered(&destruction_req, &curr->elem, help_thread_sort, NULL);
+      list_insert_ordered(&destruction_req, &curr->elem, thread_compare_priority, NULL);
     }
 
     /* Before switching the thread, we first save the information
