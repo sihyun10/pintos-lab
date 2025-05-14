@@ -92,6 +92,12 @@ struct thread {
 	char name[16];                      /* Name (for debugging purposes). */
 	int priority;                       /* Priority. */
 
+	/* donation을 위하여 선언 */
+	int original_priority;
+	struct lock* wait_on_lock;
+	struct list donations;
+	struct list_elem donation_elem;
+
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */
 
@@ -145,5 +151,6 @@ void do_iret(struct intr_frame* tf);
 
 bool thread_compare_priority(const struct list_elem* a, const struct list_elem* b,
 	void* aux UNUSED);
+void thread_test_preemption(void);
 
 #endif /* threads/thread.h */

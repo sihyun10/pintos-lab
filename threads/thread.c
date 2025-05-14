@@ -329,7 +329,8 @@ thread_yield(void) {
 void
 thread_set_priority(int new_priority) {
   // 우선순위가 낮아졌다면 우선순위가 높은 쓰레드에게 넘김
-  thread_current()->priority = new_priority;
+  thread_current()->original_priority = new_priority; // donation을 위한 추가
+  refresh_priority(); // 변경된 우선순위 반영하여 다시 donation
   thread_test_preemption();
 }
 
@@ -433,6 +434,9 @@ init_thread(struct thread* t, const char* name, int priority) {
   strlcpy(t->name, name, sizeof t->name);
   t->tf.rsp = (uint64_t)t + PGSIZE - sizeof(void*);
   t->priority = priority;
+  t->original_priority = priority;
+  t->wait_on_lock = NULL;
+  list_init(&t->donations);
   t->magic = THREAD_MAGIC;
 }
 
