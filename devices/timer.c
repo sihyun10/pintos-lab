@@ -150,6 +150,7 @@ timer_print_stats (void) {
 /* Timer interrupt handler. */
 static void
 timer_interrupt (struct intr_frame *args UNUSED) {
+	//printf("timer interrupt \n");
 	// 경과시간 +1
 	ticks++;
 
@@ -160,7 +161,7 @@ timer_interrupt (struct intr_frame *args UNUSED) {
 
 		struct thread *t = list_entry(e, struct thread, elem);
 		
-		if(timer_elapsed(t->start) > t->ticks){
+		if(timer_elapsed(t->start) >= t->ticks){
 			// list에서 삭제하고 unblock하는 순서가 중요하다.
 			// 타이머 인터럽트는 계속 sleep list를 순회하는 동안에도 들어오기 때문에
 			// 리스트에서 먼저 제거하지 않고 unblock을 한다면
@@ -193,6 +194,7 @@ too_many_loops (unsigned loops) {
 	barrier ();
 	return start != ticks;
 }
+
 
 /* Iterates through a simple loop LOOPS times, for implementing
    brief delays.

@@ -63,6 +63,8 @@ static void do_schedule(int status);
 static void schedule (void);
 static tid_t allocate_tid (void);
 
+void thread_preempt(void);
+bool thread_priority_desc(const struct list_elem *a, const struct list_elem *b, void *aux);
 /* Returns true if T appears to point to a valid thread. */
 // t가 유효한 스레드를 가지고 있는가?
 #define is_thread(t) ((t) != NULL && (t)->magic == THREAD_MAGIC)
@@ -135,6 +137,7 @@ thread_init (void) {
 // 스레드 스케줄링을 처음으로 활성화하는 함수
 void
 thread_start (void) {
+	//printf("thread start cur: %s\n", thread_current()->name);
 	/* Create the idle thread. */
 	// idle 스레드가 준비되었는지 확인하는 세마포
 	struct semaphore idle_started;
@@ -142,14 +145,13 @@ thread_start (void) {
 	sema_init (&idle_started, 0);
 	// idle 스레드 생성 (idle함수는 시스템이 놀 때 실행되는 백업 스레드)
 	thread_create ("idle", PRI_MIN, idle, &idle_started);
-	
 	// 인터럽트 허용: 문맥전환이 가능해짐
 	/* Start preemptive thread scheduling. */
 	intr_enable ();
 
-	
 	/* Wait for the idle thread to initialize idle_thread. */
 	// idle 쓰레드가 초기화될 때까지 대기함
+	// 아마도 타이머인터럽트(점유시간 초과)로 idle쓰레드가 실행되기 전에 sema down이 먼저 도착하게 되는듯하다.
 	sema_down (&idle_started);
 }
 
@@ -159,6 +161,7 @@ thread_start (void) {
 // 운영체제가 시간 흐름을 감지한다.
 void
 thread_tick (void) {
+	//printf("thread tick\n");
 	// 현재 실행 중인 스레드를 가져옴
 	struct thread *t = thread_current ();
 
@@ -240,6 +243,7 @@ thread_create (const char *name, int priority,
 	// 새 스레드를 ready 큐에 넣는다. 스케줄러가 이 스레드를 선택할 수 있게 된다.
 	/* Add to run queue. */
 	thread_unblock (t);
+	thread_preempt();
 	// 생성한 스레드의 tid를 반환
 	return tid;
 }
@@ -276,6 +280,7 @@ thread_block (void) {
 // block중인 쓰레드를 unblock하는 함수.
 void
 thread_unblock (struct thread *t) {
+
 	enum intr_level old_level;
 
 	// 유효한 스레드인가?
@@ -286,12 +291,17 @@ thread_unblock (struct thread *t) {
 	// 쓰레드가 THREAD_BLOCKED상태여야만 unblock가능하다.
 	ASSERT (t->status == THREAD_BLOCKED);
 	
-	// 밑의 두 줄 순서가 중요한가?
-	// 쓰레드를 대기중엔 리스트에 추가한다.
-	list_push_back (&ready_list, &t->elem);
+	// // 밑의 두 줄 순서가 중요한가?
+	// // 쓰레드를 대기중엔 리스트에 추가한다.
+	// list_push_back (&ready_list, &t->elem);
+	// 우선순위 스케줄링
+	list_insert_ordered(&ready_list, &t->elem, thread_priority_desc, NULL);
 	// 해당 쓰레드의 상태를 THREAD_READY로 변경한다.
 	t->status = THREAD_READY;
 	// 인터럽트를 복구시킨다.
+	// 현재 쓰레드의 우선순위보다 더 높은 우선순위일 경우 현재 스레드 양보
+	// 현재 쓰래드가 idle_thread일때도 yield해버리면 idle쓰레드가 ready_list에 
+	// 들어가버린다.
 	intr_set_level (old_level);
 }
 
@@ -364,15 +374,16 @@ thread_yield (void) {
 	struct thread *curr = thread_current ();
 	enum intr_level old_level;
 
+	
 	// 인터럽트는 보통 중요한 작업을 처리한다.
 	// 중요한 작업이 서로 겹치치 않도록 한다.
 	ASSERT (!intr_context ());
-
+	
 	// 인터럽트를 끈다.
 	old_level = intr_disable ();
 	// 현재 쓰레드가 idle가 아니면, 다시 ready상태로 만들어주기 위해 ready_list에 추가
 	if (curr != idle_thread)
-		list_push_back (&ready_list, &curr->elem);
+		list_insert_ordered(&ready_list, &curr->elem, thread_priority_desc, NULL);
 	// 스케줄러를 호출해 다른 쓰레드에게 CPU를 넘김
 	do_schedule (THREAD_READY);
 	// 이전 인터럽트 상태로 복구
@@ -383,6 +394,7 @@ thread_yield (void) {
 void
 thread_set_priority (int new_priority) {
 	thread_current ()->priority = new_priority;
+	thread_preempt();
 }
 
 /* Returns the current thread's priority. */
@@ -428,6 +440,10 @@ thread_get_recent_cpu (void) {
    ready list.  It is returned by next_thread_to_run() as a
    special case when the ready list is empty. */
 // 아무 할 일이 없을 때 CPU가 실행하는 대기 전용 스레드, ready_list가 비어있을 때
+// 이 함수는 idle쓰레드가 하는 일을 정의한 함수이다.
+// 이 함수가 부팅 후 자동 실행되고, thread block을 계속 실행시킴으로써
+// block함수 내에서 schedule함수를 실행하게 되고, ready list에 쓰레드가 등록될 때 까지
+// 기다린다.
 static void
 idle (void *idle_started_ UNUSED) {
 	// idle함수의 인자로 세마포 포인터가 들어온다.
@@ -442,9 +458,10 @@ idle (void *idle_started_ UNUSED) {
 
 	for (;;) {
 		/* Let someone else run. */
-		
 		intr_disable ();
 		// 현재 쓰레드를 스케줄러에서 제외(잠시 멈춤)
+		// block함수에서 ready_list가 비어있다면 아무것도 하지않고 다시 돌아오게된다.
+		// 비어있지 않다면
 		thread_block ();
 
 		/* Re-enable interrupts and wait for the next one.
@@ -462,6 +479,9 @@ idle (void *idle_started_ UNUSED) {
 
 		// sti: 인터럽트를 다시 킨다.
 		// hlt: cpu를 일시 정지
+		// 타이머 등등의 인터럽트 (대부분의 인터럽트)를 받으면 깸
+		// 깨서 for문이 돌기때문에 무한루프가 필요함
+		// ready list가 채워졌는지 계속 확인하기 위함.
 		asm volatile ("sti; hlt" : : : "memory");
 	}
 }
@@ -495,7 +515,7 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->status = THREAD_BLOCKED;
 	// 스레드 이름을 구조체에 복사
 	strlcpy (t->name, name, sizeof t->name);
-	// 스레드의 스택 포인터를 설정, 우선순위 설정, 디버깅용 magic 설정
+	// 스택 포인터를 설정, 우선순위 설정, 디버깅용 magic 설정
 	t->tf.rsp = (uint64_t) t + PGSIZE - sizeof (void *);
 	t->priority = priority;
 	t->magic = THREAD_MAGIC;
@@ -560,6 +580,7 @@ do_iret (struct intr_frame *tf) {
 // 스레드 전환 함수
 static void
 thread_launch (struct thread *th) {
+	
 	uint64_t tf_cur = (uint64_t) &running_thread ()->tf;
 	uint64_t tf = (uint64_t) &th->tf;
 	ASSERT (intr_get_level () == INTR_OFF);
@@ -628,7 +649,7 @@ do_schedule(int status) {
 	ASSERT (intr_get_level () == INTR_OFF);
 	ASSERT (thread_current()->status == THREAD_RUNNING);
 	// 소멸 대기 중인 쓰레드 목록에서 스레드를 하나씩 꺼내서 
-	// 메모리 할당을 해제한다
+	// 메모리 할당을 해제한다(한꺼번에 종료된 쓰레드들을 정리하는 것이 안전하다.)
 	while (!list_empty (&destruction_req)) {
 		struct thread *victim =
 			list_entry (list_pop_front (&destruction_req), struct thread, elem);
@@ -640,8 +661,10 @@ do_schedule(int status) {
 	schedule ();
 }
 
+// 다음 실행할 쓰레드를 선택하고 실행한다.
 static void
 schedule (void) {
+
 	// 현재 실행중인 쓰레드
 	struct thread *curr = running_thread ();
 	// 다음에 실행될 쓰레드
@@ -665,6 +688,7 @@ schedule (void) {
 	/* Activate the new address space. */
 	process_activate (next);
 #endif
+	// curr == next == idle_thread 라면, 아무것도 하지 않고 종료하기 위해서 필요(?)
 
 	if (curr != next) {
 		/* If the thread we switched from is dying, destroy its struct
@@ -675,7 +699,7 @@ schedule (void) {
 		   The real destruction logic will be called at the beginning of the
 		   schedule(). */
 		   // curr쓰레드가 죽은 상태일 경우 그 쓰레드를 소멸 대기 목록에 추가한다.
-		   // 이 작업은 쓰레드가 종료된 이후에 메모리를 해제할 수 있도록 한다.
+		   // 이 작업은 쓰레드가 종료된 이후에 메모리를 해제할 수 있도록 한다. (do schedule?)
 		if (curr && curr->status == THREAD_DYING && curr != initial_thread) {
 			ASSERT (curr != next);
 			list_push_back (&destruction_req, &curr->elem);
@@ -683,6 +707,7 @@ schedule (void) {
 
 		/* Before switching the thread, we first save the information
 		 * of current running. */
+		// 쓰레드 전환
 		thread_launch (next);
 	}
 }
@@ -700,3 +725,34 @@ allocate_tid (void) {
 
 	return tid;
 }
+
+bool thread_priority_desc(const struct list_elem *a, const struct list_elem *b, void *aux){
+	// a: 추가할 쓰레드, b: 리스트안의 쓰레드
+	struct thread *t1 = list_entry(a, struct thread, elem);
+	struct thread *t2 = list_entry(b, struct thread, elem);
+
+	if(t1->priority > t2->priority) return true;
+	else return false;
+}
+
+
+void thread_preempt(){
+	struct thread *curr = thread_current();
+	//if(curr == idle_thread) return;
+	if(list_empty(&ready_list)) return;
+	struct thread *t = list_entry(list_front(&ready_list), struct thread, elem);
+	if(curr->priority < t->priority){
+		thread_yield();
+	}
+}
+
+
+struct thread *get_highest_priority_ready_thread(){
+	struct list_elem *e = list_pop_front(&ready_list);
+	return list_entry(e, struct thread, elem);
+}
+
+bool get_is_readylist_empty(){
+	return list_empty(&ready_list);
+}
+

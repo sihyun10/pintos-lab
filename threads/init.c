@@ -84,8 +84,11 @@ main (void) {
 
 	/* Initialize memory system. */
 	mem_end = palloc_init ();
+
 	malloc_init ();
+
 	paging_init (mem_end);
+
 
 #ifdef USERPROG
 	tss_init ();
@@ -97,12 +100,14 @@ main (void) {
 	timer_init ();
 	kbd_init ();
 	input_init ();
-#ifdef USERPROG
+	#ifdef USERPROG
 	exception_init ();
 	syscall_init ();
-#endif
+	#endif
 	/* Start thread scheduler and enable interrupts. */
+
 	thread_start ();
+
 	serial_init_queue ();
 	timer_calibrate ();
 
@@ -199,6 +204,7 @@ read_command_line (void) {
 
 	return argv;
 }
+
 
 /* Parses options in ARGV[]
    and returns the first non-option argument. */
