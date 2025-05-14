@@ -154,7 +154,8 @@ thread_tick(void) {
 }
 
 /* Prints thread statistics. */
-void thread_print_stats(void) {
+void
+thread_print_stats(void) {
   printf("Thread: %lld idle ticks, %lld kernel ticks, %lld user ticks\n",
     idle_ticks, kernel_ticks, user_ticks);
 }
@@ -264,7 +265,10 @@ thread_unblock(struct thread* t) {
 }
 
 /* Returns the name of the running thread. */
-const char* thread_name(void) { return thread_current()->name; }
+const char*
+thread_name(void) {
+  return thread_current()->name;
+}
 
 /* Returns the running thread.
    This is running_thread() plus a couple of sanity checks.
@@ -354,13 +358,15 @@ thread_get_nice(void) {
 }
 
 /* Returns 100 times the system load average. */
-int thread_get_load_avg(void) {
+int
+thread_get_load_avg(void) {
   /* TODO: Your implementation goes here */
   return 0;
 }
 
 /* Returns 100 times the current thread's recent_cpu value. */
-int thread_get_recent_cpu(void) {
+int
+thread_get_recent_cpu(void) {
   /* TODO: Your implementation goes here */
   return 0;
 }
@@ -398,15 +404,6 @@ idle(void* idle_started_ UNUSED) {
 
        See [IA32-v2a] "HLT", [IA32-v2b] "STI", and [IA32-v3a]
        7.11.1 "HLT Instruction". */
-       /* 인터럽트를 다시 활성화하고 다음 인터럽트를 기다립니다.
-
-  `sti' 명령어는 다음 명령어가 완료될 때까지 인터럽트를 비활성화하므로
-  이 두 명령어는 원자적으로 실행됩니다. 이 원자성은 중요합니다.
-  그렇지 않으면 인터럽트를 다시 활성화하고 다음 인터럽트가 발생할 때까지 기다리는 사이에 인터럽트를 처리하여
-  최대 한 클럭 틱만큼의 시간을 낭비하게 될 수 있습니다.
-
-  [IA32-v2a] "HLT", [IA32-v2b] "STI" 및 [IA32-v3a]
-7.11.1 "HLT 명령어"를 참조하십시오. */
     asm volatile ("sti; hlt" : : : "memory");
   }
 }
@@ -438,23 +435,20 @@ init_thread(struct thread* t, const char* name, int priority) {
   t->wait_on_lock = NULL;
   list_init(&t->donations);
   t->magic = THREAD_MAGIC;
+
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should
-return a thread from the run queue, unless the run queue is
-empty.  (If the running thread can continue running, then it
-will be in the run queue.)  If the run queue is empty, return
-idle_thread. */
-/* 스케줄링할 다음 스레드를 선택하고 반환합니다.
-실행 대기열이 비어 있지 않은 한, 실행 대기열에서 스레드를 반환해야 합니다. (실행 중인 스레드가 계속 실행될 수 있다면 실행 대기열에 있을 것입니다.)
-실행 대기열이 비어 있으면,idle_thread를 반환합니다. */
-static struct thread* next_thread_to_run(void) {
+   return a thread from the run queue, unless the run queue is
+   empty.  (If the running thread can continue running, then it
+   will be in the run queue.)  If the run queue is empty, return
+   idle_thread. */
+static struct thread*
+next_thread_to_run(void) {
   if (list_empty(&ready_list))
     return idle_thread;
-
-  else {
+  else
     return list_entry(list_pop_front(&ready_list), struct thread, elem);
-  }
 }
 
 /* Use iretq to launch the thread */
@@ -571,10 +565,10 @@ do_schedule(int status) {
   schedule();
 }
 
-static void schedule(void) {
+static void
+schedule(void) {
   enum intr_level old_level;
   old_level = intr_disable();
-
   struct thread* curr = running_thread();
   struct thread* next = next_thread_to_run();
 
@@ -603,8 +597,7 @@ static void schedule(void) {
        schedule(). */
     if (curr && curr->status == THREAD_DYING && curr != initial_thread) {
       ASSERT(curr != next);
-      // list_push_back(&destruction_req, &curr->elem);
-      list_insert_ordered(&destruction_req, &curr->elem, thread_compare_priority, NULL);
+      list_push_back(&destruction_req, &curr->elem);
     }
 
     /* Before switching the thread, we first save the information
@@ -614,7 +607,8 @@ static void schedule(void) {
 }
 
 /* Returns a tid to use for a new thread. */
-static tid_t allocate_tid(void) {
+static tid_t
+allocate_tid(void) {
   static tid_t next_tid = 1;
   tid_t tid;
 
@@ -623,4 +617,12 @@ static tid_t allocate_tid(void) {
   lock_release(&tid_lock);
 
   return tid;
+}
+
+bool earlier_wake_up(const struct list_elem* a, const struct list_elem* b, void* aux UNUSED)
+{
+  struct thread* thread_a = list_entry(a, struct thread, elem);
+  struct thread* thread_b = list_entry(b, struct thread, elem);
+
+  return thread_a->wakeup_tick < thread_b->wakeup_tick;
 }

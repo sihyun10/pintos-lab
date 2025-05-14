@@ -9,24 +9,24 @@
 #include "vm/vm.h"
 #endif
 
-
 /* States in a thread's life cycle. */
-enum thread_status {
-	THREAD_RUNNING,     /* Running thread. */
-	THREAD_READY,       /* Not running but ready to run. */
-	THREAD_BLOCKED,     /* Waiting for an event to trigger. */
-	THREAD_DYING        /* About to be destroyed. */
+enum thread_status
+{
+	THREAD_RUNNING, /* Running thread. */
+	THREAD_READY,   /* Not running but ready to run. */
+	THREAD_BLOCKED, /* Waiting for an event to trigger. */
+	THREAD_DYING    /* About to be destroyed. */
 };
 
 /* Thread identifier type.
 	 You can redefine this to whatever type you like. */
 typedef int tid_t;
-#define TID_ERROR ((tid_t) -1)          /* Error value for tid_t. */
+#define TID_ERROR ((tid_t) - 1) /* Error value for tid_t. */
 
 /* Thread priorities. */
-#define PRI_MIN 0                       /* Lowest priority. */
-#define PRI_DEFAULT 31                  /* Default priority. */
-#define PRI_MAX 63                      /* Highest priority. */
+#define PRI_MIN 0      /* Lowest priority. */
+#define PRI_DEFAULT 31 /* Default priority. */
+#define PRI_MAX 63     /* Highest priority. */
 
 /* A kernel thread or user process.
  *
@@ -92,6 +92,9 @@ struct thread {
 	char name[16];                      /* Name (for debugging purposes). */
 	int priority;                       /* Priority. */
 
+	/* timer를 위하여 선언*/
+	int64_t wakeup_tick;
+
 	/* donation을 위하여 선언 */
 	int original_priority;
 	struct lock* wait_on_lock;
@@ -99,7 +102,7 @@ struct thread {
 	struct list_elem donation_elem;
 
 	/* Shared between thread.c and synch.c. */
-	struct list_elem elem;              /* List element. */
+	struct list_elem elem; /* List element. */
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
@@ -111,8 +114,8 @@ struct thread {
 #endif
 
 	/* Owned by thread.c. */
-	struct intr_frame tf;               /* Information for switching */
-	unsigned magic;                     /* Detects stack overflow. */
+	struct intr_frame tf; /* Information for switching */
+	unsigned magic;       /* Detects stack overflow. */
 };
 
 /* If false (default), use round-robin scheduler.
@@ -148,6 +151,8 @@ int thread_get_recent_cpu(void);
 int thread_get_load_avg(void);
 
 void do_iret(struct intr_frame* tf);
+
+bool earlier_wake_up(const struct list_elem* a, const struct list_elem* b, void* aux);
 
 bool thread_compare_priority(const struct list_elem* a, const struct list_elem* b,
 	void* aux UNUSED);
