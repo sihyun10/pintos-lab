@@ -51,10 +51,12 @@ process_create_initd(const char* file_name) {
 	strlcpy(fn_copy, file_name, PGSIZE);
 
 	/* Create a new thread to execute FILE_NAME. */
-	tid = thread_create(file_name, PRI_DEFAULT, initd, fn_copy);
+	char* name, * save_ptr;
+	name = strtok_r(file_name, " ", &save_ptr);
+
+	tid = thread_create(name, PRI_DEFAULT, initd, fn_copy);
 	if (tid == TID_ERROR)
-		palloc_free_page(fn_copy);
-	return tid;
+		return tid;
 }
 
 /* A thread function that launches first user process. */
@@ -178,7 +180,7 @@ process_exec(void* f_name) {
 
 	/* And then load the binary */
 	success = load(file_name, &_if);
-	hex_dump((void*)_if.rsp, (void*)_if.rsp, USER_STACK - (uint64_t)_if.rsp, true);
+	// hex_dump((void*)_if.rsp, (void*)_if.rsp, USER_STACK - (uint64_t)_if.rsp, true);
 
 	/* If load failed, quit. */
 	palloc_free_page(file_name);
@@ -333,7 +335,7 @@ load(const char* file_name, struct intr_frame* if_) {
 
 	/* arg 파싱 */
 	int argc = 0;
-	char* argv[16]; // 인자 최대 크기로 제한(인자 스트링 저장)
+	char* argv[128]; // 인자 최대 크기로 제한(인자 스트링 저장)
 
 	char* token, * save_ptr;
 	for (token = strtok_r(file_name, " ", &save_ptr); token != NULL;
@@ -433,7 +435,7 @@ load(const char* file_name, struct intr_frame* if_) {
 
 	 /* Push data into stack */
 	char* stack_ptr = (char*)if_->rsp;
-	char* argv_ptr[16]; // argv 원소의 포인터
+	char* argv_ptr[128]; // argv 원소의 포인터
 
 	for (i = (argc - 1); i >= 0; i--) {
 		// string 길이 얻기
