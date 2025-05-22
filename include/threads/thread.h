@@ -104,6 +104,10 @@ struct thread {
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem; /* List element. */
 
+	/* syscall.c */
+	enum thread_status exit_status;          /* Exit state for parent process. */
+	struct file** fd_table;
+
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
 	uint64_t* pml4;                     /* Page map level 4 */
