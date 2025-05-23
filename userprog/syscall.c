@@ -13,6 +13,7 @@ void syscall_entry(void);
 void syscall_handler(struct intr_frame *);
 
 static void syscall_halt(void);
+static void syscall_exit(int status);
 
 /* System call.
  *
@@ -46,10 +47,14 @@ void syscall_handler(struct intr_frame *f UNUSED)
   uint64_t syscall_num = f->R.rax;
 
   // TODO: Your implementation goes here.
-  switch (f->R.rax)
+  switch (syscall_num)
   {
   case SYS_HALT:
     syscall_halt();
+    break;
+  case SYS_EXIT:
+    int status = (int)f->R.rdi;
+    syscall_exit(status);
     break;
   default:
     thread_exit();
@@ -59,4 +64,18 @@ void syscall_handler(struct intr_frame *f UNUSED)
 static void syscall_halt(void)
 {
   power_off();
+}
+
+static void syscall_exit(int status)
+{
+  struct thread *curr = thread_current();
+
+  curr->exit_status = status;
+  curr->has_exited = true;
+
+  printf("%s: exit(%d)\n", curr->name, status);
+
+  sema_up(&curr->wait_sema);
+
+  thread_exit();
 }
