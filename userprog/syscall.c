@@ -53,9 +53,11 @@ void syscall_handler(struct intr_frame *f UNUSED)
     syscall_halt();
     break;
   case SYS_EXIT:
+  {
     int status = (int)f->R.rdi;
     syscall_exit(status);
     break;
+  }
   default:
     thread_exit();
   }
