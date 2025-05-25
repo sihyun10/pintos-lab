@@ -9,6 +9,7 @@
 #include "threads/synch.h"
 #include "threads/vaddr.h"
 
+
 /* A simple implementation of malloc().
 
    The size of each request, in bytes, is rounded up to a power
@@ -147,6 +148,7 @@ malloc (size_t size) {
    Returns a null pointer if memory is not available. */
 void *
 calloc (size_t a, size_t b) {
+
 	void *p;
 	size_t size;
 

@@ -4,6 +4,7 @@
 #include <round.h>
 #include <stdint.h>
 #include <string.h>
+#include <stdbool.h>
 
 /* Auxiliary data for vsnprintf_helper(). */
 struct vsnprintf_aux {
@@ -553,6 +554,7 @@ void
 hex_dump (uintptr_t ofs, const void *buf_, size_t size, bool ascii) {
 	const uint8_t *buf = buf_;
 	const size_t per_line = 16; /* Maximum bytes per line. */
+	
 
 	while (size > 0) {
 		size_t start, end, n;

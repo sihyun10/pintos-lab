@@ -57,6 +57,7 @@ filesys_done (void) {
  * Returns true if successful, false otherwise.
  * Fails if a file named NAME already exists,
  * or if internal memory allocation fails. */
+// 루트 디렉터리에 새 파일을 생성
 bool
 filesys_create (const char *name, off_t initial_size) {
 	disk_sector_t inode_sector = 0;
@@ -77,11 +78,12 @@ filesys_create (const char *name, off_t initial_size) {
  * otherwise.
  * Fails if no file named NAME exists,
  * or if an internal memory allocation fails. */
+// name 파일을 염
 struct file *
 filesys_open (const char *name) {
 	struct dir *dir = dir_open_root ();
 	struct inode *inode = NULL;
-
+	
 	if (dir != NULL)
 		dir_lookup (dir, name, &inode);
 	dir_close (dir);

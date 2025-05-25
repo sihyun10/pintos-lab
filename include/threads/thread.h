@@ -1,6 +1,6 @@
 #ifndef THREADS_THREAD_H
 #define THREADS_THREAD_H
-
+#include "threads/synch.h"
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
@@ -22,6 +22,9 @@ enum thread_status
 	 You can redefine this to whatever type you like. */
 typedef int tid_t;
 #define TID_ERROR ((tid_t) - 1) /* Error value for tid_t. */
+
+/*file descriptor*/
+#define FD_MAX 128
 
 /* Thread priorities. */
 #define PRI_MIN 0      /* Lowest priority. */
@@ -85,6 +88,22 @@ typedef int tid_t;
 	* only because they are mutually exclusive: only a thread in the
 	* ready state is on the run queue, whereas only a thread in the
 	* blocked state is on a semaphore wait list. */
+
+struct child_status {
+    tid_t tid;            
+    int exit_status;      
+    bool has_exited;      
+    bool wait_called;     
+    struct semaphore sema_wait;  
+	struct semaphore sema_fork;
+    struct list_elem elem;       
+};
+
+/* file descriptor */
+struct fd_table{
+	struct file* fd_entries[FD_MAX];
+};
+
 struct thread {
 	/* Owned by thread.c. */
 	tid_t tid;                          /* Thread identifier. */
@@ -103,6 +122,20 @@ struct thread {
 
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem; /* List element. */
+
+	/* 내가 포크된 프로세스라면 child_status를 가지고 있다. */
+	bool isforked;
+	struct child_status *child_status;
+	
+	/* 자식 프로세스 관리 */
+	struct list child_list;
+
+	/*file descriptor*/
+	struct fd_table *fd_table;
+
+	/* fork sema */
+	struct semaphore sema_fork;
+
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */

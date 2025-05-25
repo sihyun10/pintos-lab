@@ -6,6 +6,7 @@
 
 /* Number of timer interrupts per second. */
 #define TIMER_FREQ 100
+static unsigned loops_per_tick;
 
 void timer_init (void);
 void timer_calibrate (void);
@@ -20,4 +21,5 @@ void timer_nsleep (int64_t nanoseconds);
 
 void timer_print_stats (void);
 
+void busy_wait(int64_t loops);
 #endif /* devices/timer.h */

@@ -11,9 +11,11 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
+#include "threads/malloc.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
+
 
 /* Random value for struct thread's `magic' member.
    Used to detect stack overflow.  See the big comment at the top
@@ -149,8 +151,9 @@ thread_tick(void) {
     kernel_ticks++;
 
   /* Enforce preemption. */
-  if (++thread_ticks >= TIME_SLICE)
+  if (++thread_ticks >= TIME_SLICE){
     intr_yield_on_return();
+  }
 }
 
 /* Prints thread statistics. */
@@ -174,7 +177,8 @@ thread_test_preemption(void)
   if (!list_empty(&ready_list) &&
     thread_current()->priority <
     list_entry(list_front(&ready_list), struct thread, elem)->priority)
-    thread_yield();
+    if(!intr_context())
+      thread_yield();
 }
 
 /* Creates a new kernel thread named NAME with the given initial
@@ -198,16 +202,44 @@ thread_create(const char* name, int priority,
   struct thread* t;
   tid_t tid;
 
+  
   ASSERT(function != NULL);
-
+  
   /* Allocate thread. */
   t = palloc_get_page(PAL_ZERO);
   if (t == NULL)
-    return TID_ERROR;
-
+  return TID_ERROR;
+  
   /* Initialize thread. */
   init_thread(t, name, priority);
   tid = t->tid = allocate_tid();
+  
+  /* child list init */
+  list_init(&thread_current()->child_list);
+  
+  //printf("thread_create, curr thread: %s\n", thread_current()->name);
+  // main에서 사용자 프로그램 실행할때만 예외적으로 자식프로세스 취급
+  if(strcmp(thread_current()->name, "main") == 0 && strcmp(name, "idle") != 0){
+    struct child_status *ch_st = calloc(1, sizeof(struct child_status));
+	  list_push_back(&thread_current()->child_list, &ch_st->elem);
+    
+    /* child_status 등록 */
+    //printf("thread create child \n");
+    t->child_status = ch_st;
+    t->child_status->tid = tid;
+    sema_init(&t->child_status->sema_fork, 0);
+    sema_init(&t->child_status->sema_wait, 0);
+    
+    //printf("create tid: %d\n", t->child_status->tid);
+  }
+  
+  /* isforked init */
+  t->isforked = false;
+
+  /* file despriptor init */
+  t->fd_table = malloc(sizeof(struct fd_table));
+  memset(t->fd_table, 0, sizeof(struct fd_table));
+
 
   /* Call the kernel_thread if it scheduled.
    * Note) rdi is 1st argument, and rsi is 2nd argument. */
@@ -219,6 +251,8 @@ thread_create(const char* name, int priority,
   t->tf.ss = SEL_KDSEG;
   t->tf.cs = SEL_KCSEG;
   t->tf.eflags = FLAG_IF;
+
+
 
   /* Add to run queue. */
   thread_unblock(t);
@@ -299,7 +333,7 @@ thread_tid(void) {
 void
 thread_exit(void) {
   ASSERT(!intr_context());
-
+  
 #ifdef USERPROG
   process_exit();
 #endif
@@ -452,6 +486,7 @@ next_thread_to_run(void) {
 }
 
 /* Use iretq to launch the thread */
+// 유저 프로세스를 커널에서 실행(전환) 시키는 함수
 void
 do_iret(struct intr_frame* tf) {
   __asm __volatile(
@@ -567,6 +602,7 @@ do_schedule(int status) {
 
 static void
 schedule(void) {
+
   enum intr_level old_level;
   old_level = intr_disable();
   struct thread* curr = running_thread();

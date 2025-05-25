@@ -1,7 +1,13 @@
 #ifndef FILESYS_FILE_H
 #define FILESYS_FILE_H
 
+
+#include <debug.h>
+#include "filesys/inode.h"
+#include "threads/malloc.h"
 #include "filesys/off_t.h"
+
+
 
 struct inode;
 

@@ -38,6 +38,8 @@
 #include "filesys/fsutil.h"
 #endif
 
+
+
 /* Page-map-level-4 with kernel mappings only. */
 uint64_t *base_pml4;
 
@@ -67,6 +69,7 @@ int main (void) NO_RETURN;
 /* Pintos main program. */
 int
 main (void) {
+	
 	uint64_t mem_end;
 	char **argv;
 
@@ -242,8 +245,10 @@ run_task (char **argv) {
 	printf ("Executing '%s':\n", task);
 #ifdef USERPROG
 	if (thread_tests){
+
 		run_test (task);
 	} else {
+		
 		process_wait (process_create_initd (task));
 	}
 #else

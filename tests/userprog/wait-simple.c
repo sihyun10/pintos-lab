@@ -9,8 +9,13 @@ test_main (void)
 {
   int pid;
   if ((pid = fork ("child-simple"))){
+    //msg("child pid: %d", pid);
+    
+    //for(int i=0; i<2000000000; i++){}
+
     msg ("wait(exec()) = %d", wait (pid));
   } else {
+
     exec ("child-simple");
   }
 }
