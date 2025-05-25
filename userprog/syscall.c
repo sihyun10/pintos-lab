@@ -8,12 +8,16 @@
 #include "threads/flags.h"
 #include "intrinsic.h"
 #include "threads/init.h"
+#include "filesys/filesys.h"
+#include "threads/vaddr.h"
 
 void syscall_entry(void);
 void syscall_handler(struct intr_frame *);
 
-static void syscall_halt(void);
-static void syscall_exit(int status);
+static void halt(void);
+static void exit(int status);
+static bool create(const char *file, unsigned initial_size);
+static void check_address(const void *addr);
 
 /* System call.
  *
@@ -44,18 +48,21 @@ void syscall_init(void)
 /* The main system call interface */
 void syscall_handler(struct intr_frame *f UNUSED)
 {
-  uint64_t syscall_num = f->R.rax;
-
   // TODO: Your implementation goes here.
-  switch (syscall_num)
+  switch (f->R.rax)
   {
   case SYS_HALT:
-    syscall_halt();
+    halt();
     break;
   case SYS_EXIT:
   {
     int status = (int)f->R.rdi;
-    syscall_exit(status);
+    exit(status);
+    break;
+  }
+  case SYS_CREATE:
+  {
+    f->R.rax = create(f->R.rdi, f->R.rsi);
     break;
   }
   default:
@@ -63,12 +70,12 @@ void syscall_handler(struct intr_frame *f UNUSED)
   }
 }
 
-static void syscall_halt(void)
+static void halt(void)
 {
   power_off();
 }
 
-static void syscall_exit(int status)
+static void exit(int status)
 {
   struct thread *curr = thread_current();
 
@@ -80,4 +87,29 @@ static void syscall_exit(int status)
   sema_up(&curr->wait_sema);
 
   thread_exit();
+}
+
+static void check_address(const void *addr)
+{
+  if (addr == NULL || !is_user_vaddr(addr))
+    exit(-1);
+  if (pml4_get_page(thread_current()->pml4, addr) == NULL)
+    exit(-1);
+}
+
+static void check_string(const char *str)
+{
+  while (true)
+  {
+    check_address(str);
+    if (*str == '\0')
+      break;
+    str++;
+  }
+}
+
+static bool create(const char *file, unsigned initial_size)
+{
+  check_string(file);
+  return filesys_create(file, initial_size);
 }
