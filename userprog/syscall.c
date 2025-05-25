@@ -17,7 +17,7 @@ void syscall_handler(struct intr_frame *);
 static void halt(void);
 static void exit(int status);
 static bool create(const char *file, unsigned initial_size);
-static void check_address(const void *addr);
+static bool remove(const char *file);
 
 /* System call.
  *
@@ -61,10 +61,11 @@ void syscall_handler(struct intr_frame *f UNUSED)
     break;
   }
   case SYS_CREATE:
-  {
     f->R.rax = create(f->R.rdi, f->R.rsi);
     break;
-  }
+  case SYS_REMOVE:
+    f->R.rax = remove(f->R.rdi);
+    break;
   default:
     thread_exit();
   }
@@ -112,4 +113,10 @@ static bool create(const char *file, unsigned initial_size)
 {
   check_string(file);
   return filesys_create(file, initial_size);
+}
+
+static bool remove(const char *file)
+{
+  check_string(file);
+  return filesys_remove(file);
 }
