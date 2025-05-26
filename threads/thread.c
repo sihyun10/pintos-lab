@@ -6,6 +6,7 @@
 #include "threads/palloc.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "threads/malloc.h"
 #include <debug.h>
 #include <random.h>
 #include <stddef.h>
@@ -209,6 +210,12 @@ thread_create(const char* name, int priority,
   /* Initialize thread. */
   init_thread(t, name, priority);
   tid = t->tid = allocate_tid();
+
+  /* file descriptor 초기화 */
+  t->fd_table = calloc(64, sizeof(struct file*));
+
+  /* parent thread의 child list에 추가 */
+  list_push_back(&thread_current()->child_list, &t->child_elem);
 
   /* Call the kernel_thread if it scheduled.
    * Note) rdi is 1st argument, and rsi is 2nd argument. */
@@ -435,8 +442,12 @@ init_thread(struct thread* t, const char* name, int priority) {
   t->original_priority = priority;
   t->wait_on_lock = NULL;
   list_init(&t->donations);
-  t->magic = THREAD_MAGIC;
 
+  sema_init(&t->wait_sema, 0);
+  sema_init(&t->fork_sema, 0);
+  list_init(&t->child_list);
+
+  t->magic = THREAD_MAGIC;
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should

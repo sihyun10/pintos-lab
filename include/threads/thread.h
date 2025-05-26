@@ -5,6 +5,7 @@
 #include <list.h>
 #include <stdint.h>
 #include "threads/interrupt.h"
+#include "threads/synch.h"
 #ifdef VM
 #include "vm/vm.h"
 #endif
@@ -92,7 +93,7 @@ struct thread {
 	char name[16];                      /* Name (for debugging purposes). */
 	int priority;                       /* Priority. */
 
-	/* timer를 위하여 선언*/
+	/* timer를 위하여 선언 */
 	int64_t wakeup_tick;
 
 	/* donation을 위하여 선언 */
@@ -107,6 +108,13 @@ struct thread {
 	/* syscall.c */
 	enum thread_status exit_status;          /* Exit state for parent process. */
 	struct file** fd_table;
+
+	struct intr_frame parent_if;
+	struct semaphore fork_sema; /* parent process는 child process의 생성이 완료되기까지 추적 */
+	struct semaphore wait_sema; /* wait */
+
+	struct list child_list;
+	struct list_elem child_elem;
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
@@ -162,4 +170,5 @@ bool thread_compare_priority(const struct list_elem* a, const struct list_elem* 
 	void* aux UNUSED);
 void thread_test_preemption(void);
 
+struct thread* get_thread_by_tid(tid_t);
 #endif /* threads/thread.h */

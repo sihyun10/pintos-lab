@@ -6,12 +6,15 @@
 #include "threads/thread.h"
 #include "threads/loader.h"
 #include "userprog/gdt.h"
+#include "userprog/process.h"
 #include "threads/flags.h"
 #include "intrinsic.h"
 #include "threads/init.h" // power_off
 #include "console.h" // putbuf
 #include "filesys/filesys.h" // filesys_create
 #include "filesys/file.h"
+#include "threads/synch.h"
+#include "threads/palloc.h"
 
 void syscall_entry(void);
 void syscall_handler(struct intr_frame*);
@@ -20,6 +23,10 @@ bool is_valid_buffer(void* buffer, size_t size);
 /* system calls */
 void halt(void);
 void exit(int status);
+int exec(const char* cmd_line);
+int wait(tid_t tid);
+tid_t fork(const char* thread_name, struct intr_frame* if_);
+/* file */
 bool create(const char* file, unsigned initial_size);
 bool remove(const char* file);
 int open(const char* file);
@@ -72,6 +79,15 @@ syscall_handler(struct intr_frame* f UNUSED) {
 	case SYS_EXIT:
 		exit(f->R.rdi);
 		break;
+	case SYS_EXEC:
+		f->R.rax = exec(f->R.rdi);
+		break;
+	case SYS_WAIT:
+		f->R.rax = wait(f->R.rdi);
+		break;
+	case SYS_FORK:
+		f->R.rax = fork(f->R.rdi, f);
+		break;
 	case SYS_WRITE:
 		f->R.rax = write(f->R.rdi, f->R.rsi, f->R.rdx);
 		break;
@@ -121,19 +137,35 @@ void halt(void) {
 /* Terminates the current user program, returning status to the kernel. */
 void exit(int status) {
 	struct thread* curr = thread_current();
-	curr->exit_status = status; // 부모 프로세스가 알 수 있도록
-
-	/* fdt 정리 */
-	for (int i = 0; i < 64;i++) {
-		curr->fd_table[i] = NULL;
-	}
-	free(curr->fd_table);
+	curr->exit_status = status; // 종료 코드를 부모 프로세스가 알 수 있도록
 
 	// thread 이름 출력
 	printf("%s: exit(%d)\n", curr->name, status);
 	thread_exit();
 }
 
+int exec(const char* cmd_line) {
+	check_address(cmd_line);
+
+	char* new_cmd_line = palloc_get_page(PAL_ZERO); // user area -> kernel area 복사(이후 user stack 삭제됨)
+	if (new_cmd_line == NULL)
+		exit(-1);
+
+	strlcpy(new_cmd_line, cmd_line, PGSIZE);
+
+	if (process_exec(new_cmd_line) == -1)
+		exit(-1);
+}
+
+int wait(tid_t tid) {
+	return process_wait(tid);
+}
+
+tid_t fork(const char* thread_name, struct intr_frame* f) {
+	return process_fork(thread_name, f);
+}
+
+/* ---------- file manipulation ---------- */
 bool create(const char* file, unsigned initial_size) {
 	check_address(file);
 	return filesys_create(file, initial_size);
