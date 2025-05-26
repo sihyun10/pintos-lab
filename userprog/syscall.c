@@ -10,6 +10,8 @@
 #include "threads/init.h"
 #include "filesys/filesys.h"
 #include "threads/vaddr.h"
+#include "threads/synch.h"
+#include "filesys/file.h"
 
 void syscall_entry(void);
 void syscall_handler(struct intr_frame *);
@@ -18,6 +20,7 @@ void exit(int status);
 bool create(const char *file, unsigned initial_size);
 bool remove(const char *file);
 int open(const char *file);
+void close(int fd);
 int write(int fd, const void *buffer, unsigned size);
 
 /* System call.
@@ -33,8 +36,11 @@ int write(int fd, const void *buffer, unsigned size);
 #define MSR_LSTAR 0xc0000082        /* Long mode SYSCALL target */
 #define MSR_SYSCALL_MASK 0xc0000084 /* Mask for the eflags */
 
+struct lock filesys_lock;
+
 void syscall_init(void)
 {
+  lock_init(&filesys_lock);
   write_msr(MSR_STAR, ((uint64_t)SEL_UCSEG - 0x10) << 48 |
                           ((uint64_t)SEL_KCSEG) << 32);
   write_msr(MSR_LSTAR, (uint64_t)syscall_entry);
@@ -66,6 +72,9 @@ void syscall_handler(struct intr_frame *f UNUSED)
     break;
   case SYS_OPEN:
     f->R.rax = open(f->R.rdi);
+    break;
+  case SYS_CLOSE:
+    close(f->R.rdi);
     break;
   case SYS_WRITE:
     f->R.rax = write((int)f->R.rdi, (void *)f->R.rsi, (unsigned)f->R.rdx);
@@ -132,6 +141,27 @@ int open(const char *file)
 
   file_close(open_file);
   return -1;
+}
+
+void close(int fd)
+{
+  struct thread *curr = thread_current();
+
+  if (fd < 2 || fd >= FD_COUNT_LIMIT)
+    return;
+
+  struct file *file = curr->fd_table[fd];
+  if (file == NULL)
+    return;
+
+  lock_acquire(&filesys_lock);
+  file_close(file);
+  lock_release(&filesys_lock);
+
+  curr->fd_table[fd] = NULL;
+
+  if (fd < curr->next_fd)
+    curr->next_fd = fd;
 }
 
 int write(int fd, const void *buffer, unsigned size)
