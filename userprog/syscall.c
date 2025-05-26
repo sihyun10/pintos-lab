@@ -223,8 +223,26 @@ void close(int fd)
 
 int write(int fd, const void *buffer, unsigned size)
 {
+  check_address(buffer);
+
+  if (fd < 0 || fd >= FD_COUNT_LIMIT)
+    return -1;
+
+  struct thread *curr = thread_current();
+
   if (fd == 1)
   {
     putbuf(buffer, size);
+    return size;
   }
+
+  struct file *file = curr->fd_table[fd];
+  if (file == NULL)
+    return -1;
+
+  lock_acquire(&filesys_lock);
+  int bytes_written = file_write(file, buffer, size);
+  lock_release(&filesys_lock);
+
+  return bytes_written;
 }
