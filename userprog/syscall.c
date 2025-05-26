@@ -25,6 +25,8 @@ int filesize(int fd);
 int read(int fd, void *buffer, unsigned size);
 void close(int fd);
 int write(int fd, const void *buffer, unsigned size);
+void seek(int fd, unsigned position);
+unsigned tell(int fd);
 
 /* System call.
  *
@@ -81,6 +83,12 @@ void syscall_handler(struct intr_frame *f UNUSED)
     break;
   case SYS_READ:
     f->R.rax = read(f->R.rdi, f->R.rsi, f->R.rdx);
+    break;
+  case SYS_SEEK:
+    seek(f->R.rdi, f->R.rsi);
+    break;
+  case SYS_TELL:
+    f->R.rax = tell(f->R.rdi);
     break;
   case SYS_CLOSE:
     close(f->R.rdi);
@@ -245,4 +253,40 @@ int write(int fd, const void *buffer, unsigned size)
   lock_release(&filesys_lock);
 
   return bytes_written;
+}
+
+void seek(int fd, unsigned position)
+{
+  struct thread *curr = thread_current();
+
+  if (fd < 0 || fd >= FD_COUNT_LIMIT)
+    return;
+
+  struct file *file = curr->fd_table[fd];
+
+  if (file == NULL)
+    return;
+
+  lock_acquire(&filesys_lock);
+  file_seek(file, position);
+  lock_release(&filesys_lock);
+}
+
+unsigned tell(int fd)
+{
+  struct thread *curr = thread_current();
+
+  if (fd < 0 || fd >= FD_COUNT_LIMIT)
+    return -1;
+
+  struct file *file = curr->fd_table[fd];
+
+  if (file == NULL)
+    return -1;
+
+  lock_acquire(&filesys_lock);
+  unsigned pos = file_tell(file);
+  lock_release(&filesys_lock);
+
+  return pos;
 }
