@@ -53,6 +53,9 @@ tid_t process_create_initd(const char *file_name)
     return TID_ERROR;
   strlcpy(fn_copy, file_name, PGSIZE);
 
+  char *save_ptr;
+  file_name = strtok_r(file_name, " ", &save_ptr);
+
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create(file_name, PRI_DEFAULT, initd, fn_copy);
   if (tid == TID_ERROR)
@@ -216,9 +219,6 @@ int process_exec(void *f_name)
 
   hex_dump(_if.rsp, (void *)_if.rsp, USER_STACK - _if.rsp, true);
 
-  _if.R.rdi = argc;
-  _if.R.rsi = (uint64_t)argv_addr;
-
   palloc_free_page(fn_copy);
 
   /* Start switched process. */
@@ -258,10 +258,7 @@ void argument_stack(char **argv, int argc, struct intr_frame *if_)
 
   char **argv_addr = (char **)rsp;
 
-  rsp -= sizeof(int);
-  *(int *)rsp = argc;
-
-  rsp -= sizeof(void *);
+  rsp -= sizeof(void *); // fake address
   *(void **)rsp = 0;
 
   if_->rsp = (uint64_t)rsp;
