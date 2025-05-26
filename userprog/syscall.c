@@ -8,11 +8,14 @@
 #include "threads/flags.h"
 #include "intrinsic.h"
 #include "threads/init.h"
+#include "filesys/filesys.h"
+#include "threads/vaddr.h"
 
 void syscall_entry(void);
 void syscall_handler(struct intr_frame *);
 void halt(void);
 void exit(int status);
+bool create(const char *file, unsigned initial_size);
 int write(int fd, const void *buffer, unsigned size);
 
 /* System call.
@@ -53,6 +56,9 @@ void syscall_handler(struct intr_frame *f UNUSED)
   case SYS_EXIT:
     exit((int)f->R.rdi);
     break;
+  case SYS_CREATE:
+    f->R.rax = create(f->R.rdi, f->R.rsi);
+    break;
   case SYS_WRITE:
     f->R.rax = write((int)f->R.rdi, (void *)f->R.rsi, (unsigned)f->R.rdx);
     break;
@@ -72,6 +78,21 @@ void exit(int status)
   curr->exit_status = status;
   printf("%s: exit(%d)\n", curr->name, curr->exit_status);
   thread_exit();
+}
+
+static void check_address(const void *addr)
+{
+  if (is_kernel_vaddr(addr) || addr == NULL)
+    exit(-1);
+
+  if (pml4_get_page(thread_current()->pml4, addr) == NULL)
+    exit(-1);
+}
+
+bool create(const char *file, unsigned initial_size)
+{
+  check_address(file);
+  return filesys_create(file, initial_size);
 }
 
 int write(int fd, const void *buffer, unsigned size)
