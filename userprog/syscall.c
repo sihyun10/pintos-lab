@@ -20,6 +20,7 @@ void exit(int status);
 bool create(const char *file, unsigned initial_size);
 bool remove(const char *file);
 int open(const char *file);
+int filesize(int fd);
 void close(int fd);
 int write(int fd, const void *buffer, unsigned size);
 
@@ -72,6 +73,9 @@ void syscall_handler(struct intr_frame *f UNUSED)
     break;
   case SYS_OPEN:
     f->R.rax = open(f->R.rdi);
+    break;
+  case SYS_FILESIZE:
+    f->R.rax = filesize(f->R.rdi);
     break;
   case SYS_CLOSE:
     close(f->R.rdi);
@@ -141,6 +145,24 @@ int open(const char *file)
 
   file_close(open_file);
   return -1;
+}
+
+int filesize(int fd)
+{
+  struct thread *curr = thread_current();
+
+  if (fd < 2 || fd >= FD_COUNT_LIMIT)
+    return -1;
+
+  struct file *file = curr->fd_table[fd];
+  if (file == NULL)
+    return -1;
+
+  lock_acquire(&filesys_lock);
+  int size = file_length(file);
+  lock_release(&filesys_lock);
+
+  return size;
 }
 
 void close(int fd)
