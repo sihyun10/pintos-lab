@@ -12,6 +12,7 @@
 #include "threads/vaddr.h"
 #include "threads/synch.h"
 #include "filesys/file.h"
+#include "devices/input.h"
 
 void syscall_entry(void);
 void syscall_handler(struct intr_frame *);
@@ -21,6 +22,7 @@ bool create(const char *file, unsigned initial_size);
 bool remove(const char *file);
 int open(const char *file);
 int filesize(int fd);
+int read(int fd, void *buffer, unsigned size);
 void close(int fd);
 int write(int fd, const void *buffer, unsigned size);
 
@@ -76,6 +78,9 @@ void syscall_handler(struct intr_frame *f UNUSED)
     break;
   case SYS_FILESIZE:
     f->R.rax = filesize(f->R.rdi);
+    break;
+  case SYS_READ:
+    f->R.rax = read(f->R.rdi, f->R.rsi, f->R.rdx);
     break;
   case SYS_CLOSE:
     close(f->R.rdi);
@@ -163,6 +168,36 @@ int filesize(int fd)
   lock_release(&filesys_lock);
 
   return size;
+}
+
+int read(int fd, void *buffer, unsigned size)
+{
+  check_address(buffer);
+
+  struct thread *curr = thread_current();
+
+  if (fd == 0)
+  {
+    unsigned i;
+    for (i = 0; i < size; i++)
+    {
+      ((char *)buffer)[i] = input_getc();
+    }
+    return size;
+  }
+
+  if (fd == 1 || fd < 0 || fd >= FD_COUNT_LIMIT)
+    return -1;
+
+  struct file *file = curr->fd_table[fd];
+  if (file == NULL)
+    return -1;
+
+  lock_acquire(&filesys_lock);
+  int bytes_read = file_read(file, buffer, size);
+  lock_release(&filesys_lock);
+
+  return bytes_read;
 }
 
 void close(int fd)
