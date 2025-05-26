@@ -17,6 +17,7 @@ void halt(void);
 void exit(int status);
 bool create(const char *file, unsigned initial_size);
 bool remove(const char *file);
+int open(const char *file);
 int write(int fd, const void *buffer, unsigned size);
 
 /* System call.
@@ -63,6 +64,9 @@ void syscall_handler(struct intr_frame *f UNUSED)
   case SYS_REMOVE:
     f->R.rax = remove(f->R.rdi);
     break;
+  case SYS_OPEN:
+    f->R.rax = open(f->R.rdi);
+    break;
   case SYS_WRITE:
     f->R.rax = write((int)f->R.rdi, (void *)f->R.rsi, (unsigned)f->R.rdx);
     break;
@@ -103,6 +107,31 @@ bool remove(const char *file)
 {
   check_address(file);
   return filesys_remove(file);
+}
+
+int open(const char *file)
+{
+  check_address(file);
+
+  struct file *open_file = filesys_open(file);
+  if (open_file == NULL)
+    return -1;
+
+  struct thread *curr = thread_current();
+
+  // 빈 fd 슬롯 찾기
+  for (int fd = curr->next_fd; fd < FD_COUNT_LIMIT; fd++)
+  {
+    if (curr->fd_table[fd] == NULL)
+    {
+      curr->fd_table[fd] = open_file;
+      curr->next_fd = fd + 1;
+      return fd;
+    }
+  }
+
+  file_close(open_file);
+  return -1;
 }
 
 int write(int fd, const void *buffer, unsigned size)

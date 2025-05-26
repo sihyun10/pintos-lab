@@ -440,6 +440,11 @@ init_thread(struct thread *t, const char *name, int priority)
   t->original_priority = priority;
   t->wait_on_lock = NULL;
   list_init(&t->donations);
+
+  for (int i = 0; i < FD_COUNT_LIMIT; i++)
+    t->fd_table[i] = NULL;
+  t->next_fd = 2;
+
   t->magic = THREAD_MAGIC;
 }
 
