@@ -217,7 +217,7 @@ int process_exec(void *f_name)
   void *argv_addr;
   argument_stack(argv, argc, &_if);
 
-  hex_dump(_if.rsp, (void *)_if.rsp, USER_STACK - _if.rsp, true);
+  // hex_dump(_if.rsp, (void *)_if.rsp, USER_STACK - _if.rsp, true);
 
   palloc_free_page(fn_copy);
 
