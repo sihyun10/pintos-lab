@@ -183,7 +183,7 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
 	/* 2. Resolve VA from the parent's page map level 4. */
 	// 해당 가상 주소와 연결된 물리주소의 커널 가상주소
 	parent_page = pml4_get_page (parent->pml4, va);
-	if(parent_page == NULL) return true;
+	if(parent_page == NULL) return false;
 	//if(parent_page == NULL || is_kernel_vaddr(parent_page)) return true;
 
 	/* 3. TODO: Allocate new PAL_USER page for the child and set result to
@@ -256,11 +256,7 @@ __do_fork (void *aux) {
 	for(struct list_elem *e = list_begin(child_list); e != list_end(child_list); e = list_next(e)){
 		//printf("for tid: %d\n", list_entry(e, struct child_status, elem)->tid);
 		struct child_status *tmp = list_entry(e, struct child_status, elem);
-		if(tmp->has_exited && tmp->tid != current->tid){
-			// 이미 종료했는데, wait하지않은 쓰레드를 정리
-			list_remove(tmp);
-			free(tmp);
-		}
+		
 		if(tmp->tid == current->tid){
 			ch_st = list_entry(e, struct child_status, elem);
 		}
@@ -367,8 +363,8 @@ process_exec (void *f_name) {
 	char *file_name = palloc_get_page(PAL_ZERO);
 	strlcpy(file_name, (char *)f_name, strlen(f_name) + 1);
 	bool success;
-
-	//palloc_free_page(f_name);
+	
+	palloc_free_page(f_name);
 	//printf("exec\n");
 	/* We cannot use the intr_frame in the thread structure.
 	* This is because when current thread rescheduled,
@@ -394,9 +390,12 @@ process_exec (void *f_name) {
 	
 	/* If load failed, quit. */
 	//실패시 종료
+	
 	palloc_free_page (file_name);
-	if (!success)
+	if (!success){
+		
 		return -1;
+	}
 
 
 
@@ -433,11 +432,7 @@ process_wait (tid_t child_tid UNUSED) {
 	//printf("list begin: %p\n", list_begin(child_list));
 	for(struct list_elem *e = list_begin(child_list); e != list_end(child_list); e = list_next(e)){
 		struct child_status *tmp = list_entry(e, struct child_status, elem);
-		if(tmp->has_exited && tmp->tid != child_tid){
-			// 이미 종료했는데, wait하지않은 쓰레드를 정리
-			list_remove(tmp);
-			free(tmp);
-		}
+		
 		//printf("tmp pid: %d\n", tmp->tid);
 		if(tmp->tid == child_tid) {
 			
@@ -501,9 +496,15 @@ process_exit (void) {
 	 * TODO: project2/process_termination.html).
 	 * TODO: We recommend you to implement process resource cleanup here. */
 
-	// struct child_status *ch_st = curr->child_status;
-	// int status = 0;
 
+	
+	
+	struct list *child_list = &curr->child_list;
+	while (!list_empty(child_list)) {
+		struct list_elem *e = list_pop_front(child_list);
+		struct child_status *ch = list_entry(e, struct child_status, elem);
+		free(ch); // 부모가 종료되므로, 자식 상태 정보 해제
+	}
 
 	// printf("%s: exit(%d)\n", curr->name, status);
 	//printf("process_exit");

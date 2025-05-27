@@ -150,6 +150,12 @@ void exit(int status){
 	}
 	free(curr->fd_table);
 
+	struct list *child_list = &curr->child_list;
+	while (!list_empty(child_list)) {
+		struct list_elem *e = list_pop_front(child_list);
+		struct child_status *ch = list_entry(e, struct child_status, elem);
+		free(ch); // 부모가 종료되므로, 자식 상태 정보 해제
+	}
 
 	struct child_status *ch_st = curr->child_status;
 	if(ch_st != NULL){

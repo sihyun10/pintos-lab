@@ -11,6 +11,7 @@
 #include "threads/loader.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "threads/thread.h"
 
 /* Page allocator.  Hands out memory in page-size (or
    page-multiple) chunks.  See malloc.h for an allocator that
@@ -288,7 +289,7 @@ palloc_get_multiple (enum palloc_flags flags, size_t page_cnt) {
 		if (flags & PAL_ASSERT)
 			PANIC ("palloc_get: out of pages");
 	}
-
+	//printf("[ALLOC] page at %p thread: %s\n", pages, thread_current()->name);
 	return pages;
 }
 
@@ -333,6 +334,7 @@ palloc_free_multiple (void *pages, size_t page_cnt) {
 /* Frees the page at PAGE. */
 void
 palloc_free_page (void *page) {
+	//printf("[FREE ] page at %p thread: %s\n", page, thread_current()->name);
 	palloc_free_multiple (page, 1);
 }
 
