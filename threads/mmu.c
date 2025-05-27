@@ -222,9 +222,11 @@ pml4_destroy (uint64_t *pml4) {
 	ASSERT (pml4 != base_pml4);
 
 	/* if PML4 (vaddr) >= 1, it's kernel space by define. */
+
 	uint64_t *pdpe = ptov ((uint64_t *) pml4[0]);
 	if (((uint64_t) pdpe) & PTE_P)
 		pdpe_destroy ((void *) PTE_ADDR (pdpe));
+
 	palloc_free_page ((void *) pml4);
 }
 

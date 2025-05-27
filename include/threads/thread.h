@@ -94,6 +94,7 @@ struct child_status {
     int exit_status;      
     bool has_exited;      
     bool wait_called;     
+	bool fork_success;
     struct semaphore sema_wait;  
 	struct semaphore sema_fork;
     struct list_elem elem;       
@@ -128,6 +129,7 @@ struct thread {
 	struct child_status *child_status;
 	
 	/* 자식 프로세스 관리 */
+	struct lock childlist_lock;
 	struct list child_list;
 
 	/*file descriptor*/
@@ -136,6 +138,7 @@ struct thread {
 	/* fork sema */
 	struct semaphore sema_fork;
 
+	struct file *user_prog;
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */

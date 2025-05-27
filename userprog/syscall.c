@@ -13,7 +13,7 @@
 #include "userprog/process.h"
 #include "include/lib/string.h"
 #include "threads/palloc.h"
-
+#include "threads/synch.h"
 // #include "filesys/inode.h"
 // #include "threads/malloc.h"
 // /* An open file. */
@@ -138,7 +138,19 @@ void halt(void){
 void exit(int status){
 	struct thread* curr = thread_current();
 	//부모프로세스에서 자식프로세스의 종료 정보를 저장
-	 
+	if(curr->user_prog != NULL) {
+		file_allow_write(curr->user_prog);
+		file_close(curr->user_prog);
+	}
+
+	struct file **fd_entries = curr->fd_table->fd_entries;
+	for(int i=0; i<FD_MAX; i++){
+		if(fd_entries[i] == NULL) continue;
+		file_close(fd_entries[i]);
+	}
+	free(curr->fd_table);
+
+
 	struct child_status *ch_st = curr->child_status;
 	if(ch_st != NULL){
 
@@ -147,12 +159,20 @@ void exit(int status){
 		ch_st->has_exited = true;
 		printf("%s: exit(%d)\n", curr->name, status);
 		sema_up(&ch_st->sema_wait);
+
+		if(!list_empty(&ch_st->sema_fork.waiters)){
+			sema_up(&ch_st->sema_fork);
+		}
+		if(!list_empty(&ch_st->sema_wait.waiters)){
+			sema_up(&ch_st->sema_wait);
+		}
 	}
 	else{
 		
 		printf("%s: exit(%d)\n", curr->name, status);
 		
 	}
+	
 	thread_exit();
 }
 
@@ -164,7 +184,7 @@ pid_t fork (const char *thread_name){
 
 int exec(const char *file_name){
 	//printf("exec file name: %s, addr: %p\n", file_name, file_name);
-
+	if(!isValidString(file_name)) exit(-1);
 	char *fn_copy = palloc_get_page(PAL_ZERO);
 	if(fn_copy == NULL) return -1;
 	strlcpy(fn_copy, file_name, PGSIZE);
@@ -172,7 +192,8 @@ int exec(const char *file_name){
 	//printf("curr magic: 0x%x\n", thread_current()->magic);
 
 	int tid = process_exec(fn_copy);
-
+	palloc_free_page(fn_copy);
+	if(tid == -1) exit(-1);
 	return tid;
 }
 
@@ -184,7 +205,7 @@ int wait (pid_t pid){
 
 // all done. process wait 구현해야 완전 통과
 bool create(const char *file, unsigned initial_size) {
-	if(file == NULL) return false;
+	if(file == NULL) exit(-1);
 	if(!isValidAddress(file)) exit(-1);
 	bool success = filesys_create(file, initial_size);
 	return success;
@@ -201,9 +222,12 @@ int open(const char *file){
 	if(!isValidString(file)) exit(-1);
 	if(file == NULL) return -1;
 	struct file* f = filesys_open(file);
-
+	
+	
 	//printf("f address: %p\n", f);
 	if(f == NULL) return -1;
+	
+
 	struct thread* curr = thread_current();
 	// 0, 1, 2는 예약된 fd
 	for(int fd = 3; fd < FD_MAX; fd++){
@@ -244,9 +268,11 @@ int read(int fd, void *buffer, unsigned size){
 		struct thread* curr = thread_current();
 		struct file* f = curr->fd_table->fd_entries[fd];
 		if(f == NULL) return -1;
-
+		//printf("inode pointer: %p\n", f->inode);
+		lock_acquire(&f->inode->inode_lock);
 		//printf("buffer: %p, size: %u\n", buffer, size);
 		int result = file_read(f, buffer, size);
+		lock_release(&f->inode->inode_lock);
 		//printf("file_read returned %d\n", result);
 		return result;
 	}
@@ -286,6 +312,9 @@ unsigned tell(int fd){
 }
 
 void close(int fd){
+	if(fd < 0) exit(-1);
+	if(fd == 0 || fd == 1 || fd == 2) exit(-1);
+	if(fd >= FD_MAX) exit(-1);
 	struct thread *curr = thread_current();
 	struct file *file = curr->fd_table->fd_entries[fd];
 	curr->fd_table->fd_entries[fd] = NULL;

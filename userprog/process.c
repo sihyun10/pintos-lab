@@ -111,7 +111,7 @@ tid_t
 process_fork (const char *name, struct intr_frame *if_) {
 	/* Clone current thread to new thread.*/
 	enum intr_level old_level;
-	//printf("process_fork\n");
+	//printf("process_fork: %s\n", name);
 	old_level = intr_disable();
 	
 	struct fork_args *fargs = calloc(1, sizeof(struct fork_args));
@@ -121,20 +121,46 @@ process_fork (const char *name, struct intr_frame *if_) {
     fargs->parent_thread = thread_current();
     memcpy(&fargs->parent_if, if_, sizeof(struct intr_frame));
 
-
-
+	
+	//printf("process fork, list size: %d\n", list_size(&thread_current()->child_list));
+	
 	tid_t tid = thread_create (name, PRI_DEFAULT, __do_fork, fargs);
+	//printf("forking tid: %d\n",tid);
+	if(tid < 0) {
+		//printf("tid < 0\n");
+		free(fargs);
+		return TID_ERROR;
+	}
+	//printf("ch_st: %p\n", ch_st);
+	//lock_acquire(&thread_current()->childlist_lock);
+	//lock_release(&thread_current()->childlist_lock);
+	
 	struct child_status *ch_st = calloc(1, sizeof(struct child_status));
+	if(ch_st == NULL){
+		free(fargs);
+		//printf("ch_st failed\n");
+		return TID_ERROR;
+	}
 	list_push_back(&thread_current()->child_list, &ch_st->elem);
 	ch_st->tid = tid;
 	ch_st->wait_called = false;
 	sema_init(&ch_st->sema_fork, 0);
 	sema_init(&ch_st->sema_wait, 0);
+	//printf("list begin: %p\n", list_begin(&thread_current()->child_list));
+
+	//printf("inserted tid: %d\n", ch_st->tid);
 	// 자식이 sema up을 먼저하고 sema down해도 ok
 	//printf("intr 복구\n");
 	intr_set_level(old_level);
 
+	//printf("right before return tid in fork\n");
 	sema_down(&ch_st->sema_fork);
+
+	if(!ch_st->fork_success) {
+		list_remove(&ch_st->elem);
+		free(ch_st);
+		return TID_ERROR;
+	}
 
 	return tid;
 }
@@ -165,7 +191,8 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
 
 	// 유저풀에서 한페이지만큼 할당, 커널 가상 주소
 	newpage = palloc_get_page(PAL_USER);
-	ASSERT(newpage != NULL);
+	if (newpage == NULL)
+		return false;
 	/* 4. TODO: Duplicate parent's page to the new page and
 	 *    TODO: check whether parent's page is writable or not (set WRITABLE
 	 *    TODO: according to the result). */
@@ -193,15 +220,17 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
 static void
 __do_fork (void *aux) {
 	// fork를 호출한 쓰레드(부모 쓰레드)
+
+	//printf("__do_fork\n");
 	struct fork_args *fargs = (struct fork_args *) aux;
 	struct thread *parent = fargs->parent_thread;
 	struct thread *current = thread_current ();
 
-
 	
 	struct intr_frame if_;
 	memcpy(&if_, &fargs->parent_if, sizeof(struct intr_frame));
-
+	
+	free(fargs);
 	
 	if_.R.rax = 0;
 
@@ -221,6 +250,26 @@ __do_fork (void *aux) {
 	/* 	자식 프로세스는 fork 리턴값으로 0
 		callee saved register 설정
 	*/
+
+	struct list *child_list = &parent->child_list;
+	struct child_status* ch_st = NULL;
+	for(struct list_elem *e = list_begin(child_list); e != list_end(child_list); e = list_next(e)){
+		//printf("for tid: %d\n", list_entry(e, struct child_status, elem)->tid);
+		struct child_status *tmp = list_entry(e, struct child_status, elem);
+		if(tmp->has_exited && tmp->tid != current->tid){
+			// 이미 종료했는데, wait하지않은 쓰레드를 정리
+			list_remove(tmp);
+			free(tmp);
+		}
+		if(tmp->tid == current->tid){
+			ch_st = list_entry(e, struct child_status, elem);
+		}
+	}
+	//lock_release(&current->childlist_lock);
+	//printf("do fork tid: %d\n", ch_st->tid);
+	if(!ch_st) goto error;
+	current->child_status = ch_st;
+
 	
 
 	/* 2. Duplicate PT */
@@ -263,16 +312,20 @@ __do_fork (void *aux) {
 	}
 	
 	// 자식 프로세스가 준비를 마쳤다는것을 알리기
-	struct list *child_list = &parent->child_list;
-	struct child_status* ch_st = NULL;
-	for(struct list_elem *e = list_begin(child_list); e != list_end(child_list); e = list_next(e)){
-		if(list_entry(e, struct child_status, elem)->tid == current->tid){
-			ch_st = list_entry(e, struct child_status, elem);
-		}
-	}
-	
-	if(!ch_st) goto error;
-	current->child_status = ch_st;
+	//lock_acquire(&thread_current()->childlist_lock);
+	// struct list *child_list = &parent->child_list;
+	// struct child_status* ch_st = NULL;
+	// for(struct list_elem *e = list_begin(child_list); e != list_end(child_list); e = list_next(e)){
+	// 	//printf("for tid: %d\n", list_entry(e, struct child_status, elem)->tid);
+	// 	if(list_entry(e, struct child_status, elem)->tid == current->tid){
+	// 		ch_st = list_entry(e, struct child_status, elem);
+	// 	}
+	// }
+	// //lock_release(&current->childlist_lock);
+	// //printf("do fork tid: %d\n", ch_st->tid);
+	// if(!ch_st) goto error;
+	// current->child_status = ch_st;
+	ch_st->fork_success = true;
 	sema_up(&ch_st->sema_fork);
 	//printf("_do_fork\n");
 	
@@ -284,7 +337,24 @@ __do_fork (void *aux) {
 		do_iret (&if_);
 	}
 error:
+	ch_st->fork_success = false;
+	//ch_st->has_exited = true;
+	/* 비정상종료(__do_fork)시 fd테이블 정리 */
+	struct file **fd_entries = current->fd_table->fd_entries;
+	for(int i=0; i<FD_MAX; i++){
+		if(fd_entries[i] == NULL) continue;
+		file_close(fd_entries[i]);
+	}
+	free(current->fd_table);
+	if(current->user_prog != NULL) {
+		file_close(current->user_prog);
+	}
+	sema_up(&ch_st->sema_fork);
+
+	//if (current->pml4) pml4_destroy(current->pml4);
+	
 	thread_exit ();
+	
 }
 
 /* Switch the current execution context to the f_name.
@@ -297,6 +367,8 @@ process_exec (void *f_name) {
 	char *file_name = palloc_get_page(PAL_ZERO);
 	strlcpy(file_name, (char *)f_name, strlen(f_name) + 1);
 	bool success;
+
+	//palloc_free_page(f_name);
 	//printf("exec\n");
 	/* We cannot use the intr_frame in the thread structure.
 	* This is because when current thread rescheduled,
@@ -350,39 +422,68 @@ process_wait (tid_t child_tid UNUSED) {
 	/* XXX: Hint) The pintos exit if process_wait (initd), we recommend you
 	 * XXX:       to add infinite loop here before
 	 * XXX:       implementing the process_wait. */
-	// printf("cur the: %s\n", thread_current()->name);
+	//printf("cur the: %s\n", thread_current()->name);
+	
 	struct thread* curr = thread_current();
 	struct child_status *ch_st = NULL;
+
+
+	//lock_acquire(&thread_current()->childlist_lock);
 	struct list *child_list = &curr->child_list;
-	for(struct list_elem *e = list_begin(child_list); e != list_end(child_list); e = list_next(child_list)){
-		printf("process_wait: %d\n", child_tid);
+	//printf("list begin: %p\n", list_begin(child_list));
+	for(struct list_elem *e = list_begin(child_list); e != list_end(child_list); e = list_next(e)){
 		struct child_status *tmp = list_entry(e, struct child_status, elem);
+		if(tmp->has_exited && tmp->tid != child_tid){
+			// 이미 종료했는데, wait하지않은 쓰레드를 정리
+			list_remove(tmp);
+			free(tmp);
+		}
+		//printf("tmp pid: %d\n", tmp->tid);
 		if(tmp->tid == child_tid) {
+			
 			ch_st = tmp;
 			break;
 		}
 	}
+
 	//printf("ch_st tid: %d\n", ch_st->tid);
-	if(ch_st == NULL) return -1;
-	if(ch_st->wait_called) return -1;
+	if(ch_st == NULL || ch_st->wait_called) {
+		//lock_release(&thread_current()->childlist_lock);
+		return TID_ERROR; 
+	}
+
+
 	//printf("process_wait\n");
 
 	ch_st->wait_called = true;
+
+
+	//lock_release(&thread_current()->childlist_lock);
+
 	//printf("wait tid: %d\n", ch_st->tid);
 	//printf("wait sema val: %d\n", ch_st->sema_wait.value);
 	// list_init(&ch_st->sema_wait);
 	// exit할 때 가지 기다림
+	//printf("process_wait: %d\n", child_tid);
 	sema_down(&ch_st->sema_wait);
-	//printf("after sema down\n");
+	//printf("after sema down child id: %d\n", child_tid);
 	// exit 후
-	if(!ch_st->has_exited)
-		return -1;
+	//printf("process wait done: %d\n", child_tid);
 
+	 
+
+	if(!ch_st->has_exited){
+		list_remove(&ch_st->elem);
+		free(ch_st);
+		return TID_ERROR;
+	}
+
+	//lock_acquire(&thread_current()->childlist_lock);
 	int exit_status = ch_st->exit_status;
 	// 반환
 	list_remove(&ch_st->elem);
 	free(ch_st);
-	printf("반환, 리스트삭제\n");
+	//lock_release(&thread_current()->childlist_lock);
 	return exit_status;
 
 	// for(int i=0; i<2000000000; i++){}
@@ -555,7 +656,11 @@ load (const char *file_name, struct intr_frame *if_) {
 		printf ("load: %s: open failed\n", file_name);
 		goto done;
 	}
+
 	
+	file_deny_write(file);
+	t->user_prog = file;
+
 	/* Read and verify executable header. */
 	// ELF파일의 첫 부분(header)을 읽어 구조체 ehdr에 저장후 검증
 	if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
@@ -690,7 +795,7 @@ load (const char *file_name, struct intr_frame *if_) {
 
 done:
 	/* We arrive here whether the load is successful or not. */
-	file_close (file);
+	//file_close (file);
 	return success;
 }
 

@@ -29,6 +29,7 @@ static bool load (const char *file_name, struct intr_frame *if_);
 static void initd (void *f_name);
 static void __do_fork (void *);
 
+
 /* General process initializer for initd and other process. */
 static void
 process_init (void) {
@@ -53,6 +54,7 @@ process_create_initd (const char *file_name) {
 	 * Otherwise there's a race between the caller and load(). */
 	// 한 페이지만큼 메모리를 할당해서 프로그램 이름을 저장할 준비를 함.
 	fn_copy = palloc_get_page (0);
+	
 	// 페이지 할당 실패
 	if (fn_copy == NULL)
 		return TID_ERROR;

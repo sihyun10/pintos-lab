@@ -116,6 +116,7 @@ thread_init(void) {
   init_thread(initial_thread, "main", PRI_DEFAULT);
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid();
+  list_init(&initial_thread->child_list);
 }
 
 /* Starts preemptive thread scheduling by enabling interrupts.
@@ -208,23 +209,26 @@ thread_create(const char* name, int priority,
   /* Allocate thread. */
   t = palloc_get_page(PAL_ZERO);
   if (t == NULL)
-  return TID_ERROR;
+    return TID_ERROR;
   
   /* Initialize thread. */
   init_thread(t, name, priority);
   tid = t->tid = allocate_tid();
   
   /* child list init */
-  list_init(&thread_current()->child_list);
+  lock_init(&t->childlist_lock);
+  list_init(&t->child_list);
   
   //printf("thread_create, curr thread: %s\n", thread_current()->name);
   // main에서 사용자 프로그램 실행할때만 예외적으로 자식프로세스 취급
   if(strcmp(thread_current()->name, "main") == 0 && strcmp(name, "idle") != 0){
+
     struct child_status *ch_st = calloc(1, sizeof(struct child_status));
 	  list_push_back(&thread_current()->child_list, &ch_st->elem);
     
     /* child_status 등록 */
-    //printf("thread create child \n");
+    
+
     t->child_status = ch_st;
     t->child_status->tid = tid;
     sema_init(&t->child_status->sema_fork, 0);
