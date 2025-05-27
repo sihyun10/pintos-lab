@@ -112,9 +112,12 @@ struct thread {
 	struct intr_frame parent_if;
 	struct semaphore fork_sema; /* parent process는 child process의 생성이 완료되기까지 추적 */
 	struct semaphore wait_sema; /* wait */
+	struct semaphore exit_sema; /* exit */
 
 	struct list child_list;
 	struct list_elem child_elem;
+
+	struct file* running_file; /* process_exit시, close를 위함 */
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */

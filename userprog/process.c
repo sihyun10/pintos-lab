@@ -151,6 +151,7 @@ __do_fork(void* aux) {
 	/* TODO: somehow pass the parent_if. (i.e. process_fork()'s if_) */
 	struct intr_frame* parent_if = &parent->parent_if;
 	bool succ = true;
+	// printf("*** fork - thread : %s\n", current->name);
 
 	/* 1. Read the cpu context to local stack. */
 	memcpy(&if_, parent_if, sizeof(struct intr_frame));
@@ -182,7 +183,11 @@ __do_fork(void* aux) {
 		if (parent->fd_table[fd] == NULL) {
 			continue;
 		}
-		current->fd_table[fd] = file_duplicate(parent->fd_table[fd]);
+		// printf("*** fdt duplicate - fd : %d\n", fd);
+		// current->fd_table[fd] = file_duplicate(parent->fd_table[fd]);
+		struct file* dup = file_duplicate(parent->fd_table[fd]);
+		current->fd_table[fd] = dup;
+		// printf("*** file_duplicate - %p : deny_write = %d\n", dup, file_is_deny_write(dup));
 	}
 
 	process_init();
@@ -259,11 +264,14 @@ process_wait(tid_t child_tid UNUSED) {
 
 	/* child process가 exit되기를 기다림 */
 	sema_down(&child->wait_sema);
+	int chile_status = child->exit_status;
+	sema_up(&child->exit_sema);
 
 	/* child process가 exit되면 child_list에서 삭제 */
 	list_remove(&child->child_elem);
 
-	return child->exit_status;
+
+	return chile_status;
 }
 
 /* Exit the process. This function is called by thread_exit (). */
@@ -281,11 +289,17 @@ process_exit(void) {
 	}
 	free(curr->fd_table);
 
+	/* close running file */
+	if (curr->running_file != NULL) {
+		file_close(curr->running_file);
+	}
+
 	/* 프로세스 정리 */
 	process_cleanup();
 
 	/* sema up - parent process에게 알림 */
 	sema_up(&curr->wait_sema);
+	sema_down(&curr->exit_sema); // 부모 프로세스가 status를 전달 받을 때까지 기다림
 }
 
 /* Free the current process's resources. */
@@ -422,6 +436,11 @@ load(const char* file_name, struct intr_frame* if_) {
 		goto done;
 	}
 
+	/* 실행 파일 저장, deny write 설정 */
+	file_deny_write(file);
+
+	t->running_file = file;
+
 	/* Read and verify executable header. */
 	if (file_read(file, &ehdr, sizeof ehdr) != sizeof ehdr
 		|| memcmp(ehdr.e_ident, "\177ELF\2\1\1", 7)
@@ -542,7 +561,8 @@ load(const char* file_name, struct intr_frame* if_) {
 
 done:
 	/* We arrive here whether the load is successful or not. */
-	file_close(file);
+	if (!success)
+		file_close(file);
 	return success;
 }
 

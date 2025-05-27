@@ -18,14 +18,14 @@
 
 void syscall_entry(void);
 void syscall_handler(struct intr_frame*);
-bool is_valid_user_ptr(void*);
-bool is_valid_buffer(void* buffer, size_t size);
+
 /* system calls */
 void halt(void);
 void exit(int status);
 int exec(const char* cmd_line);
 int wait(tid_t tid);
 tid_t fork(const char* thread_name, struct intr_frame* if_);
+
 /* file */
 bool create(const char* file, unsigned initial_size);
 bool remove(const char* file);
@@ -61,6 +61,8 @@ syscall_init(void) {
 	 * mode stack. Therefore, we masked the FLAG_FL. */
 	write_msr(MSR_SYSCALL_MASK,
 		FLAG_IF | FLAG_TF | FLAG_DF | FLAG_IOPL | FLAG_AC | FLAG_NT);
+
+	lock_init(&filesys_lock);
 }
 
 /* The main system call interface */
@@ -180,7 +182,10 @@ int open(const char* file) {
 	/* open 성공시, fd를 반환하고 실패시, -1을 반환한다. */
 	check_address(file);
 
+	lock_acquire(&filesys_lock);
 	struct file* f = filesys_open(file);
+	lock_release(&filesys_lock);
+
 	if (f == NULL) {
 		return -1;
 	}
@@ -200,6 +205,7 @@ void close(int fd) {
 	if (fd >= 2 && fd < 64) {
 		thread_current()->fd_table[fd] = 0;
 	}
+
 }
 
 int filesize(int fd) {
@@ -214,43 +220,54 @@ int read(int fd, void* buffer, unsigned size) {
 		buffer = input_getc();
 		return size;
 	}
-	else {
-		// 옳은 fd인지 확인
-		if (fd < 2 || fd >= 64) {
-			return -1;
-		}
 
-		// 접근한 file이 비어있는지 확인
-		struct file* read_file = thread_current()->fd_table[fd];
-		if (read_file == NULL) {
-			return -1;
-		}
-
-		return file_read(read_file, buffer, size);
+	// 옳은 fd인지 확인
+	if (fd < 2 || fd >= 64) {
+		return -1;
 	}
+
+	// 접근한 file이 비어있는지 확인
+	struct file* read_file = thread_current()->fd_table[fd];
+	if (read_file == NULL) {
+		return -1;
+	}
+
+	// file_read 수행
+	lock_acquire(&filesys_lock);
+	off_t bytes = file_read(read_file, buffer, size);
+	lock_release(&filesys_lock);
+
+	return bytes;
 }
 
 int write(int fd, const void* buffer, unsigned size) {
 	check_address(buffer);
 
+	// 표준 출력: 콘솔 처리
 	if (fd == 1) {
+		lock_acquire(&filesys_lock);
 		putbuf(buffer, size);
+		lock_release(&filesys_lock);
 		return size;
 	}
-	else {
-		// 옳은 fd인지 확인
-		if (fd < 2 || fd >= 64) {
-			return -1;
-		}
 
-		// 접근한 file이 비어있는지 확인
-		struct file* write_file = thread_current()->fd_table[fd];
-		if (write_file == NULL) {
-			return -1;
-		}
-
-		return file_write(write_file, buffer, size);
+	// 옳은 fd인지 확인
+	if (fd < 2 || fd >= 64) {
+		return -1;
 	}
+
+	// 접근한 file이 비어있는지 확인
+	struct file* write_file = thread_current()->fd_table[fd];
+	if (write_file == NULL) {
+		return -1;
+	}
+
+	// file_write 수행
+	lock_acquire(&filesys_lock);
+	off_t bytes = file_write(write_file, buffer, size);
+	lock_release(&filesys_lock);
+
+	return bytes;
 }
 
 void seek(int fd, unsigned position) {
