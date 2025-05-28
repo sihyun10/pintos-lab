@@ -303,7 +303,7 @@ __do_fork (void *aux) {
 	 * TODO:       the resources of parent.*/
 	
 	// 파일 디스크립터 리스트 복사
-	for(int fd=3; fd<FD_MAX; fd++){
+	for(int fd=0; fd<FD_MAX; fd++){
 		
 		if(parent->fd_table->fd_entries[fd] == NULL) continue;
 		struct file* copied_file = file_duplicate(parent->fd_table->fd_entries[fd]);
@@ -336,6 +336,7 @@ __do_fork (void *aux) {
 		do_iret (&if_);
 	}
 error:
+	// fork중에 비정상 종료시
 	ch_st->fork_success = false;
 	//ch_st->has_exited = true;
 	/* 비정상종료(__do_fork)시 fd테이블 정리 */
@@ -425,7 +426,7 @@ process_wait (tid_t child_tid UNUSED) {
 	 * XXX:       to add infinite loop here before
 	 * XXX:       implementing the process_wait. */
 	//printf("cur the: %s\n", thread_current()->name);
-	
+	//printf("wait\n");
 	struct thread* curr = thread_current();
 	struct child_status *ch_st = NULL;
 
@@ -464,7 +465,7 @@ process_wait (tid_t child_tid UNUSED) {
 	// exit할 때 가지 기다림
 	//printf("process_wait: %d\n", child_tid);
 	sema_down(&ch_st->sema_wait);
-	//printf("after sema down child id: %d\n", child_tid);
+	// printf("after sema down child id: %d\n", child_tid);
 	// exit 후
 	//printf("process wait done: %d\n", child_tid);
 
