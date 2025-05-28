@@ -368,6 +368,7 @@ process_exec (void *f_name) {
 	strlcpy(file_name, (char *)f_name, strlen(f_name) + 1);
 	bool success;
 	
+
 	//printf("exec\n");
 	/* We cannot use the intr_frame in the thread structure.
 	* This is because when current thread rescheduled,
