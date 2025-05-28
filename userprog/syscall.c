@@ -242,6 +242,9 @@ int open(const char *file){
 			return fd;
 		}
 	}
+	// fd table 꽉 찼을 때
+	file_close(f);
+	return -1;
 }
 
 int filesize(int fd){
