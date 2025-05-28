@@ -11,16 +11,21 @@
 #include "threads/loader.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "threads/thread.h"
 
 /* Page allocator.  Hands out memory in page-size (or
    page-multiple) chunks.  See malloc.h for an allocator that
    hands out smaller chunks.
+   페이지 할당기: 페이지크기 또는 여러 페이지 크기를 할당해줍니다.
+   더 작은 청크 할당자는 malloc
 
    System memory is divided into two "pools" called the kernel
    and user pools.  The user pool is for user (virtual) memory
    pages, the kernel pool for everything else.  The idea here is
    that the kernel needs to have memory for its own operations
    even if user processes are swapping like mad.
+   시스템 메모리는 커널풀과 사용자풀로 나뉜다.
+   이 메모리풀은 가상 메모리를 말하는게 아니라, 물리메모리를 말한다.
 
    By default, half of system RAM is given to the kernel pool and
    half to the user pool.  That should be huge overkill for the
@@ -29,7 +34,9 @@
 /* A memory pool. */
 struct pool {
 	struct lock lock;               /* Mutual exclusion. */
+	// 메모리 풀에 있는 페이지들이 사용중인지 아닌지를 기록
 	struct bitmap *used_map;        /* Bitmap of free pages. */
+	// 메모리 풀의 시작 주소
 	uint8_t *base;                  /* Base of pool. */
 };
 
@@ -114,11 +121,11 @@ resolve_area_info (struct area *base_mem, struct area *ext_mem) {
 }
 
 /*
- * Populate the pool.
- * All the pages are manged by this allocator, even include code page.
- * Basically, give half of memory to kernel, half to user.
- * We push base_mem portion to the kernel as much as possible.
- */
+* Populate the pool.
+* All the pages are manged by this allocator, even include code page.
+* Basically, give half of memory to kernel, half to user.
+* We push base_mem portion to the kernel as much as possible.
+*/
 static void
 populate_pools (struct area *base_mem, struct area *ext_mem) {
 	extern char _end;
@@ -259,6 +266,8 @@ palloc_init (void) {
    then the pages are filled with zeros.  If too few pages are
    available, returns a null pointer, unless PAL_ASSERT is set in
    FLAGS, in which case the kernel panics. */
+// page_cnt 개의 페이지를 flags에 따라 유저, 커널풀에서 할당한다.
+// 커널 가상주소를 반환
 void *
 palloc_get_multiple (enum palloc_flags flags, size_t page_cnt) {
 	struct pool *pool = flags & PAL_USER ? &user_pool : &kernel_pool;
@@ -280,7 +289,7 @@ palloc_get_multiple (enum palloc_flags flags, size_t page_cnt) {
 		if (flags & PAL_ASSERT)
 			PANIC ("palloc_get: out of pages");
 	}
-
+	//printf("[ALLOC] page at %p thread: %s\n", pages, thread_current()->name);
 	return pages;
 }
 
@@ -325,6 +334,7 @@ palloc_free_multiple (void *pages, size_t page_cnt) {
 /* Frees the page at PAGE. */
 void
 palloc_free_page (void *page) {
+	//printf("[FREE ] page at %p thread: %s\n", page, thread_current()->name);
 	palloc_free_multiple (page, 1);
 }
 

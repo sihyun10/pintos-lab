@@ -215,6 +215,9 @@ outputs:
 'to'
 'tokenize.'
 */
+// s는 토큰화 할 문자열, delimiters는 구분자, save_ptr은 시작위치를 저장
+// 처음에는 s에 문자열을 넣지만, 그 후 부터는 NULL을 넣어준다.
+// 구분자가 연속으로 있어도 하나로 처리한다.
 char *
 strtok_r (char *s, const char *delimiters, char **save_ptr) {
 	char *token;

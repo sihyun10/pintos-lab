@@ -25,7 +25,9 @@ typedef unsigned long elem_type;
    inside, it's an array of elem_type (defined above) that
    simulates an array of bits. */
 struct bitmap {
+	// 이 비트맵에 포함된 비트의 총 개수
 	size_t bit_cnt;     /* Number of bits. */
+	// 정수배열, 64비트 숫자로 관리한다
 	elem_type *bits;    /* Elements that represent bits. */
 };
 

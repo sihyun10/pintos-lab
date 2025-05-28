@@ -52,6 +52,7 @@ consume_some_resources (void)
 	 A low-memory condition in open() should not lead to the
 	 termination of the process.  */
   for (fd = 0; fd < fdmax; fd++) {
+    //msg("fd: %d", fd);
 #ifdef EXTRA2
 	  if (fd != 0 && (random_ulong () & 1)) {
 		if (dup2(random_ulong () % fd, fd+fdmax) == -1)
@@ -117,7 +118,7 @@ make_children (void) {
         fail ("Unreachable");
       }
     }
-
+    //msg("middle");
     snprintf (child_name, sizeof child_name, "%s_%d_%s", "child", i, "O");
     pid = fork(child_name);
     if (pid < 0) {
@@ -128,15 +129,18 @@ make_children (void) {
       break;
     }
   }
-
+  //msg("wait pid: %d", pid);
   int depth = wait (pid);
+  //msg("depth wait done: %d", depth);
   if (depth < 0)
 	  fail ("Should return > 0.");
 
   if (i == 0)
 	  return depth;
-  else
+  else{
+    //msg("exit(depth)");
 	  exit (depth);
+  }
 }
 
 int
@@ -145,7 +149,7 @@ main (int argc UNUSED, char *argv[] UNUSED) {
 
   int first_run_depth = make_children ();
   CHECK (first_run_depth >= EXPECTED_DEPTH_TO_PASS, "Spawned at least %d children.", EXPECTED_DEPTH_TO_PASS);
-
+  //msg("middle");
   for (int i = 0; i < EXPECTED_REPETITIONS; i++) {
     int current_run_depth = make_children();
     if (current_run_depth < first_run_depth) {
@@ -156,4 +160,4 @@ main (int argc UNUSED, char *argv[] UNUSED) {
 
   msg ("success. Program forked %d iterations.", EXPECTED_REPETITIONS);
   msg ("end");
-}
+} 

@@ -5,6 +5,8 @@
 #include <stdint.h>
 #include "threads/pte.h"
 
+// (uint64_t *pte, void *va, void *aux)를 매개변수로 받고, bool을 반환하는
+// 함수를 pte_for_each_func타입이라고 정의
 typedef bool pte_for_each_func (uint64_t *pte, void *va, void *aux);
 
 uint64_t *pml4e_walk (uint64_t *pml4, const uint64_t va, int create);

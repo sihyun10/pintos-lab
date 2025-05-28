@@ -2,13 +2,14 @@
 #include <debug.h>
 #include "filesys/inode.h"
 #include "threads/malloc.h"
+#include "threads/thread.h"
 
-/* An open file. */
-struct file {
-	struct inode *inode;        /* File's inode. */
-	off_t pos;                  /* Current position. */
-	bool deny_write;            /* Has file_deny_write() been called? */
-};
+// /* An open file. */
+// struct file {
+// 	struct inode *inode;        /* File's inode. */
+// 	off_t pos;                  /* Current position. */
+// 	bool deny_write;            /* Has file_deny_write() been called? */
+// };
 
 /* Opens a file for the given INODE, of which it takes ownership,
  * and returns the new file.  Returns a null pointer if an
@@ -16,6 +17,7 @@ struct file {
 struct file *
 file_open (struct inode *inode) {
 	struct file *file = calloc (1, sizeof *file);
+	
 	if (inode != NULL && file != NULL) {
 		file->inode = inode;
 		file->pos = 0;
@@ -93,7 +95,12 @@ file_read_at (struct file *file, void *buffer, off_t size, off_t file_ofs) {
  * (Normally we'd grow the file in that case, but file growth is
  * not yet implemented.)
  * Advances FILE's position by the number of bytes read. */
-off_t
+/*
+	file: 쓸 파일, buffer: 쓸 내용, size: 버퍼에서 복사할 사이즈
+	반환값: 파일에 기록된 바이트수, 일반적으로 size와 동일하지만, 다 쓸 수 없을 경우
+	최대한 적은 사이즈값을 반환
+*/
+ off_t
 file_write (struct file *file, const void *buffer, off_t size) {
 	off_t bytes_written = inode_write_at (file->inode, buffer, size, file->pos);
 	file->pos += bytes_written;
@@ -159,3 +166,4 @@ file_tell (struct file *file) {
 	ASSERT (file != NULL);
 	return file->pos;
 }
+

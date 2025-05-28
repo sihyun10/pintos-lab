@@ -26,7 +26,7 @@ static unsigned loops_per_tick;
 
 static intr_handler_func timer_interrupt;
 static bool too_many_loops(unsigned loops);
-static void busy_wait(int64_t loops);
+void busy_wait(int64_t loops);
 static void real_time_sleep(int64_t num, int32_t denom);
 
 static struct list sleeping_list;
@@ -159,6 +159,7 @@ static void check_sleeping_threads(void)
 static void
 timer_interrupt(struct intr_frame *args UNUSED)
 {
+  
   ticks++;
   thread_tick();
 
@@ -191,7 +192,7 @@ too_many_loops(unsigned loops)
    affect timings, so that if this function was inlined
    differently in different places the results would be difficult
    to predict. */
-static void NO_INLINE
+void NO_INLINE
 busy_wait(int64_t loops)
 {
   while (loops-- > 0)
