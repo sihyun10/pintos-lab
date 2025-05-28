@@ -156,6 +156,9 @@ process_fork (const char *name, struct intr_frame *if_) {
 	//printf("right before return tid in fork\n");
 	sema_down(&ch_st->sema_fork);
 
+
+	// 비정상종료했지만, 이 조건이 없으면 정상 종료했다고 판단해버림. 그래서
+	// 자식의 tid를 반환하게 된다.
 	if(!ch_st->fork_success) {
 		list_remove(&ch_st->elem);
 		free(ch_st);
@@ -364,7 +367,6 @@ process_exec (void *f_name) {
 	strlcpy(file_name, (char *)f_name, strlen(f_name) + 1);
 	bool success;
 	
-	palloc_free_page(f_name);
 	//printf("exec\n");
 	/* We cannot use the intr_frame in the thread structure.
 	* This is because when current thread rescheduled,
@@ -378,16 +380,17 @@ process_exec (void *f_name) {
 
 	/* We first kill the current context */
 	// 현재 프로세스에서 사용하던 자원 제거
-	
+
 	process_cleanup ();
 	//printf("load curr magic: 0x%x\n", thread_current()->magic);
 	/* And then load the binary */
 	// 실행파일을 메모리에 적재
-	
+
 	success = load (file_name, &_if);
 	//printf("here\n");
 	//hex_dump(_if.rsp, _if.rsp, USER_STACK - (uint64_t)_if.rsp, true);
-	
+
+	palloc_free_page(f_name);
 	/* If load failed, quit. */
 	//실패시 종료
 	
@@ -499,12 +502,12 @@ process_exit (void) {
 
 	
 	
-	struct list *child_list = &curr->child_list;
-	while (!list_empty(child_list)) {
-		struct list_elem *e = list_pop_front(child_list);
-		struct child_status *ch = list_entry(e, struct child_status, elem);
-		free(ch); // 부모가 종료되므로, 자식 상태 정보 해제
-	}
+	// struct list *child_list = &curr->child_list;
+	// while (!list_empty(child_list)) {
+	// 	struct list_elem *e = list_pop_front(child_list);
+	// 	struct child_status *ch = list_entry(e, struct child_status, elem);
+	// 	free(ch); // 부모가 종료되므로, 자식 상태 정보 해제
+	// }
 
 	// printf("%s: exit(%d)\n", curr->name, status);
 	//printf("process_exit");
