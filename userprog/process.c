@@ -621,7 +621,7 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 /* 사용자 프로그램(ELF 실행파일)을 디스크에서 메모리로 적재하고, 
  시작주소(rip)와 초기 스택 포인터(rsp)를 설정한다.*/
 static bool
-load (const char *file_name, struct intr_frame *if_) {
+	load (const char *file_name, struct intr_frame *if_) {
 
 	//printf("load curr magic: 0x%x\n", thread_current()->magic);
 	struct thread *t = thread_current ();

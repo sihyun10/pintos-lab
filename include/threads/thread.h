@@ -24,7 +24,7 @@ typedef int tid_t;
 #define TID_ERROR ((tid_t) - 1) /* Error value for tid_t. */
 
 /*file descriptor*/
-#define FD_MAX 64
+#define FD_MAX 30
 
 /* Thread priorities. */
 #define PRI_MIN 0      /* Lowest priority. */

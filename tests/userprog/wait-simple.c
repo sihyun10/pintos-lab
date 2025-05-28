@@ -35,3 +35,6 @@ test_main (void)
 //   msg ("wait(exec()) = %d", wait(pid1));
 //   msg ("wait(exec()) = %d", wait(pid2));
 // }
+
+/* tests/userprog/fork-yield.c */
+

@@ -229,7 +229,7 @@ int open(const char *file){
 	if(file == NULL) return -1;
 	struct file* f = filesys_open(file);
 	
-	
+
 	//printf("f address: %p\n", f);
 	if(f == NULL) return -1;
 	
