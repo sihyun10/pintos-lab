@@ -198,7 +198,7 @@ int exec(const char *file_name){
 	//printf("curr magic: 0x%x\n", thread_current()->magic);
 
 	int tid = process_exec(fn_copy);
-	palloc_free_page(fn_copy);
+	//palloc_free_page(fn_copy);
 	if(tid == -1) exit(-1);
 	return tid;
 }

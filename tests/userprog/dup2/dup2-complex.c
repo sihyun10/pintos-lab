@@ -39,30 +39,30 @@ main (int argc UNUSED, char *argv[] UNUSED) {
   byte_cnt += read (fd2, buffer + byte_cnt, 10);
 
   CHECK (dup2 (fd2, fd3) > 1, "first dup2()");
-
   byte_cnt += read (fd3, buffer + byte_cnt, 10);
-
+  
   seek (fd1, 15);
   byte_cnt += (read (fd1, buffer + 15, 30) - 15);
-
+  
   dup2 (dup2 (fd3, fd3), dup2 (fd1, fd2));
   seek (fd2, tell (fd1));
   
   byte_cnt += read (fd2, buffer + byte_cnt, 17 + 2 * dup2 (fd4, fd1));
-
+  
   close (fd1);
   close (fd2);
-
+  
   seek (fd3, 60);
   byte_cnt += read (fd3, buffer + byte_cnt, 10);
-
+  
   dup2 (dup2 (fd3, fd2), fd1);
   byte_cnt += read (fd2, buffer + byte_cnt, 10);
   byte_cnt += read (fd1, buffer + byte_cnt, 10);
-
+ // msg("fd1: %d, fd2: %d, fd3: %d, fd4: %d\n", fd1, fd2, fd3, fd4);
   for (fd5 = 10; fd5 == fd1 || fd5 == fd2 || fd5 == fd3 || fd5 == fd4; fd5++){}
   dup2 (1, fd5);
 
+ 
   write (fd5, magic, sizeof magic - 1);
 
   create ("cheer", sizeof sample);
@@ -84,7 +84,6 @@ main (int argc UNUSED, char *argv[] UNUSED) {
     close (fd2);
     dup2 (fd4, fd2);
     dup2 (fd3, fd1);
-
     seek (fd2, 0);
     byte_cnt = read (fd2, magic, 3);
     msg ("%d", byte_cnt);
@@ -92,6 +91,7 @@ main (int argc UNUSED, char *argv[] UNUSED) {
     msg ("%d", byte_cnt);
     
     read (fd1, buffer, 20);
+    
     seek (fd4, 0);
     int write_cnt = write (fd4, buffer, 20);
 
@@ -111,15 +111,15 @@ main (int argc UNUSED, char *argv[] UNUSED) {
   // parent
   int cur_pos = wait (pid);
   dup2 (fd5, 1);
-  
   seek (fd4, 0);
   byte_cnt += read (fd4, buffer + byte_cnt, 20);
   close (fd4);
-
+  
   seek (fd2, cur_pos);
   byte_cnt += read (fd2, buffer + byte_cnt , sizeof sample - byte_cnt);
-
+  
   seek (1, 0);
+
 
   if (strcmp (sample, buffer)) {
     msg ("expected text:\n%s", sample);
