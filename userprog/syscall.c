@@ -68,13 +68,11 @@ syscall_init(void) {
 /* The main system call interface */
 void
 syscall_handler(struct intr_frame* f UNUSED) {
-	// TODO: Your implementation goes here.
-	/* %rdi, %rsi, %rdx, %r10, %r8, and %r9 */
+	/* %rdi, %rsi, %rdx, %r10, %r8, %r9 */
 	int syscall_number = (int)f->R.rax;
 
 	switch (syscall_number)
 	{
-		/* Projects 2 and later. */
 	case SYS_HALT:
 		halt();
 		break;
@@ -149,14 +147,18 @@ void exit(int status) {
 int exec(const char* cmd_line) {
 	check_address(cmd_line);
 
-	char* new_cmd_line = palloc_get_page(PAL_ZERO); // user area -> kernel area 복사(이후 user stack 삭제됨)
+	char* new_cmd_line = palloc_get_page(PAL_ZERO);
 	if (new_cmd_line == NULL)
-		exit(-1);
+		return -1;
 
 	strlcpy(new_cmd_line, cmd_line, PGSIZE);
 
-	if (process_exec(new_cmd_line) == -1)
-		exit(-1);
+	int result = process_exec(new_cmd_line);
+
+	if (result < 0)
+		return -1;
+
+	return result; // 성공 시 프로세스 ID 반환
 }
 
 int wait(tid_t tid) {
@@ -164,7 +166,11 @@ int wait(tid_t tid) {
 }
 
 tid_t fork(const char* thread_name, struct intr_frame* f) {
-	return process_fork(thread_name, f);
+	tid_t pid = process_fork(thread_name, f);
+	if (pid == TID_ERROR || pid <= 0) {
+		return TID_ERROR;
+	}
+	return pid;
 }
 
 /* ---------- file manipulation ---------- */
@@ -179,7 +185,6 @@ bool remove(const char* file) {
 }
 
 int open(const char* file) {
-	/* open 성공시, fd를 반환하고 실패시, -1을 반환한다. */
 	check_address(file);
 
 	lock_acquire(&filesys_lock);
@@ -190,26 +195,41 @@ int open(const char* file) {
 		return -1;
 	}
 
-	struct file** fdt = thread_current()->fd_table;
-	for (int fd = 2;fd < 64;fd++) {
-		if (fdt[fd] == NULL || fdt[fd] == 0) {
+	struct thread* curr = thread_current();
+	struct file** fdt = curr->fd_table;
+
+	for (int fd = 2; fd < FDCOUNT_LIMIT; fd++) {
+		if (fdt[fd] == NULL) {
 			fdt[fd] = f;
 			return fd;
 		}
 	}
-	return -1; // fdt 전부 할당됨
+
+	// FDT가 가득 찼다면 파일 닫고 -1 반환
+	file_close(f);
+	return -1;
 }
 
 void close(int fd) {
-	/* fd를 0으로 바꿔준다. */
-	if (fd >= 2 && fd < 64) {
-		thread_current()->fd_table[fd] = 0;
+	if (fd >= 2 && fd < FDCOUNT_LIMIT) {
+		struct file* f = thread_current()->fd_table[fd];
+		if (f != NULL) {
+			file_close(f);
+			thread_current()->fd_table[fd] = NULL;
+		}
 	}
-
 }
 
 int filesize(int fd) {
-	return file_length(thread_current()->fd_table[fd]);
+	if (fd < 2 || fd >= FDCOUNT_LIMIT) {
+		exit(-1);
+	}
+	struct file* f = thread_current()->fd_table[fd];
+	if (f == NULL) {
+		exit(-1);
+	}
+	return file_length(f);
+	// return file_length(thread_current()->fd_table[fd]);
 }
 
 int read(int fd, void* buffer, unsigned size) {
@@ -222,7 +242,7 @@ int read(int fd, void* buffer, unsigned size) {
 	}
 
 	// 옳은 fd인지 확인
-	if (fd < 2 || fd >= 64) {
+	if (fd < 2 || fd >= FDCOUNT_LIMIT) {
 		return -1;
 	}
 
@@ -236,6 +256,8 @@ int read(int fd, void* buffer, unsigned size) {
 	lock_acquire(&filesys_lock);
 	off_t bytes = file_read(read_file, buffer, size);
 	lock_release(&filesys_lock);
+
+	// file_close(read_file); // close
 
 	return bytes;
 }
@@ -252,7 +274,7 @@ int write(int fd, const void* buffer, unsigned size) {
 	}
 
 	// 옳은 fd인지 확인
-	if (fd < 2 || fd >= 64) {
+	if (fd < 2 || fd >= FDCOUNT_LIMIT) {
 		return -1;
 	}
 
@@ -267,13 +289,29 @@ int write(int fd, const void* buffer, unsigned size) {
 	off_t bytes = file_write(write_file, buffer, size);
 	lock_release(&filesys_lock);
 
+	// file_close(write_file); // close
+
 	return bytes;
 }
 
 void seek(int fd, unsigned position) {
-	file_seek(thread_current()->fd_table[fd], position);
+	if (fd < 2 || fd >= FDCOUNT_LIMIT) {
+		exit(-1);
+	}
+	struct file* f = thread_current()->fd_table[fd];
+	if (f == NULL) {
+		exit(-1);
+	}
+	file_seek(f, position);
 }
 
 unsigned tell(int fd) {
-	return file_tell(thread_current()->fd_table[fd]);
+	if (fd < 2 || fd >= FDCOUNT_LIMIT) {
+		exit(-1);
+	}
+	struct file* f = thread_current()->fd_table[fd];
+	if (f == NULL) {
+		exit(-1);
+	}
+	return file_tell(f);
 }

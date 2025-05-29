@@ -57,8 +57,12 @@ process_create_initd(const char* file_name) {
 	name = strtok_r(file_name, " ", &save_ptr);
 
 	tid = thread_create(name, PRI_DEFAULT, initd, fn_copy);
-	if (tid == TID_ERROR)
-		return tid;
+	if (tid == TID_ERROR) {
+		palloc_free_page(fn_copy);
+		return TID_ERROR;
+	}
+
+	return tid;
 }
 
 /* A thread function that launches first user process. */
@@ -84,12 +88,17 @@ process_fork(const char* name, struct intr_frame* if_ UNUSED) {
 	memcpy(&curr->parent_if, if_, sizeof(struct intr_frame)); // 레지스터 값 복제
 
 	tid_t pid = thread_create(name, PRI_DEFAULT, __do_fork, curr);
-	if (pid == TID_ERROR) {
+	if (pid == TID_ERROR || pid < 0) {
 		return TID_ERROR;
 	}
 
 	struct thread* child = get_child_process(pid);
 	sema_down(&child->fork_sema); // 자식 프로세스가 load 될 때까지 대기
+
+	if (child->exit_status == -1) { // fork 중 비정상 종료
+		list_remove(&child->child_elem);
+		return TID_ERROR;
+	}
 
 	return pid; // 부모 프로세스의 반환값은 자식 프로세스의 pid
 }
@@ -133,6 +142,7 @@ duplicate_pte(uint64_t* pte, void* va, void* aux) {
 	 *    permission. */
 	if (!pml4_set_page(current->pml4, va, newpage, writable)) {
 		/* 6. TODO: if fail to insert page, do error handling. */
+		palloc_free_page(newpage);
 		return false;
 	}
 	return true;
@@ -179,16 +189,28 @@ __do_fork(void* aux) {
 	 * TODO:       the resources of parent.*/
 
 	 /* 3. Duplicate file descriptor table */
-	for (int fd = 0;fd < 64; fd++) {
+	for (int fd = 0; fd < FDCOUNT_LIMIT; fd++) {
 		if (parent->fd_table[fd] == NULL) {
 			continue;
 		}
-		// printf("*** fdt duplicate - fd : %d\n", fd);
-		// current->fd_table[fd] = file_duplicate(parent->fd_table[fd]);
-		struct file* dup = file_duplicate(parent->fd_table[fd]);
-		current->fd_table[fd] = dup;
-		// printf("*** file_duplicate - %p : deny_write = %d\n", dup, file_is_deny_write(dup));
+		if (fd == 0 || fd == 1) { // stdin, stdout은 복제하지 않음
+			current->fd_table[fd] = parent->fd_table[fd];
+		}
+		else {
+			current->fd_table[fd] = file_duplicate(parent->fd_table[fd]);
+			if (current->fd_table[fd] == NULL) { // 복제 실패
+				for (int i = 2; i < fd; i++) { // 현재 실패한 fd 전까지만 닫음
+					if (current->fd_table[i] != NULL) {
+						file_close(current->fd_table[i]);
+					}
+				}
+				palloc_free_multiple(current->fd_table, FDT_PAGES); // FDT 메모리 해제
+				current->fd_table = NULL; // NULL로 설정하여 이중 해제 방지
+				goto error;
+			}
+		}
 	}
+	current->next_fd = parent->next_fd;
 
 	process_init();
 	sema_up(&current->fork_sema);
@@ -197,6 +219,8 @@ __do_fork(void* aux) {
 	if (succ)
 		do_iret(&if_);
 error:
+	current->exit_status = -1;
+	sema_up(&current->fork_sema);
 	thread_exit();
 }
 
@@ -246,6 +270,14 @@ struct thread*
 	return NULL;
 }
 
+void
+remove_child_process(void) {
+	struct thread* parent = thread_current();
+	while (!list_empty(&parent->child_list)) {
+		struct list_elem* e = list_pop_front(&parent->child_list);
+	}
+}
+
 /* Waits for thread TID to die and returns its exit status.  If
  * it was terminated by the kernel (i.e. killed due to an
  * exception), returns -1.  If TID is invalid or if it was not a
@@ -264,42 +296,46 @@ process_wait(tid_t child_tid UNUSED) {
 
 	/* child process가 exit되기를 기다림 */
 	sema_down(&child->wait_sema);
-	int chile_status = child->exit_status;
+	int child_status = child->exit_status;
+	list_remove(&child->child_elem); // child_list에서 삭제
+
 	sema_up(&child->exit_sema);
 
-	/* child process가 exit되면 child_list에서 삭제 */
-	list_remove(&child->child_elem);
-
-
-	return chile_status;
+	return child_status;
 }
 
 /* Exit the process. This function is called by thread_exit (). */
 void
 process_exit(void) {
 	struct thread* curr = thread_current();
-	/* TODO: Your code goes here.
-	 * TODO: Implement process termination message (see
-	 * TODO: project2/process_termination.html).
-	 * TODO: We recommend you to implement process resource cleanup here. */
 
-	 /* fdt 정리 */
-	for (int i = 0; i < 64;i++) {
-		curr->fd_table[i] = NULL;
+	/* fdt 정리 */
+	for (int i = 2; i < curr->next_fd; i++) {
+		if (curr->fd_table[i] != NULL) {
+			file_close(curr->fd_table[i]);
+			curr->fd_table[i] = NULL;
+		}
 	}
-	free(curr->fd_table);
+	// FDT 메모리 해제
+	if (curr->fd_table != NULL) {
+		palloc_free_multiple(curr->fd_table, FDT_PAGES);
+		curr->fd_table = NULL;
+	}
 
 	/* close running file */
 	if (curr->running_file != NULL) {
 		file_close(curr->running_file);
+		curr->running_file = NULL;
 	}
+
+	/* child list 정리 */
+	remove_child_process();
 
 	/* 프로세스 정리 */
 	process_cleanup();
 
-	/* sema up - parent process에게 알림 */
-	sema_up(&curr->wait_sema);
-	sema_down(&curr->exit_sema); // 부모 프로세스가 status를 전달 받을 때까지 기다림
+	sema_up(&curr->wait_sema); // parent process에게 종료를 알림
+	sema_down(&curr->exit_sema); // parent process가 status를 전달 받을 때까지 기다림
 }
 
 /* Free the current process's resources. */
@@ -438,7 +474,6 @@ load(const char* file_name, struct intr_frame* if_) {
 
 	/* 실행 파일 저장, deny write 설정 */
 	file_deny_write(file);
-
 	t->running_file = file;
 
 	/* Read and verify executable header. */
@@ -561,8 +596,13 @@ load(const char* file_name, struct intr_frame* if_) {
 
 done:
 	/* We arrive here whether the load is successful or not. */
-	if (!success)
-		file_close(file);
+	if (!success) {
+		if (file != NULL) {
+			file_close(file);
+			t->running_file = NULL;
+		}
+		t->exit_status = -1;
+	}
 	return success;
 }
 

@@ -211,8 +211,17 @@ thread_create(const char* name, int priority,
   init_thread(t, name, priority);
   tid = t->tid = allocate_tid();
 
+  t->exit_status = 0; // exit_status 초기화
+
   /* file descriptor 초기화 */
-  t->fd_table = calloc(64, sizeof(struct file*));
+  t->fd_table = palloc_get_multiple(PAL_ZERO, FDT_PAGES);
+  if (t->fd_table == NULL) {
+    palloc_free_page(t); // 스레드 구조체 메모리 해제
+    return TID_ERROR;
+  }
+  t->fd_table[0] = 0; // stdin 예약된 자리
+  t->fd_table[1] = 1; // stdout 예약된 자리
+  t->next_fd = 2; // 다음 사용 가능한 fd
 
   /* parent thread의 child list에 추가 */
   list_push_back(&thread_current()->child_list, &t->child_elem);

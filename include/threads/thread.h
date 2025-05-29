@@ -29,6 +29,11 @@ typedef int tid_t;
 #define PRI_DEFAULT 31 /* Default priority. */
 #define PRI_MAX 63     /* Highest priority. */
 
+/* File Descriptor */
+#define FDT_PAGES     1                        // test `multi-oom` 테스트용
+#define FDCOUNT_LIMIT 64
+// #define FDCOUNT_LIMIT FDT_PAGES * (1 << 9)  // test `multi-oom` 테스트용
+
 /* A kernel thread or user process.
  *
  * Each thread structure is stored in its own 4 kB page.  The
@@ -107,17 +112,18 @@ struct thread {
 
 	/* syscall.c */
 	enum thread_status exit_status;          /* Exit state for parent process. */
-	struct file** fd_table;
-
 	struct intr_frame parent_if;
+
+	struct file** fd_table;
+	int next_fd;
+	struct file* running_file; /* process_exit시, close를 위함 */
+
 	struct semaphore fork_sema; /* parent process는 child process의 생성이 완료되기까지 추적 */
 	struct semaphore wait_sema; /* wait */
 	struct semaphore exit_sema; /* exit */
 
 	struct list child_list;
 	struct list_elem child_elem;
-
-	struct file* running_file; /* process_exit시, close를 위함 */
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
